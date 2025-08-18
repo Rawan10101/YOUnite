@@ -539,7 +539,7 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   categoryItemSelected: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#2B2B2B',
     borderColor: '#4CAF50',
   },
   categoryText: {
