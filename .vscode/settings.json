@@ -1,0 +1,12 @@
+{
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit",
+    "source.sortMembers": "explicit"
+  },
+  "terminal.integrated.env.windows": {
+    "ANDROID_HOME": "D:\\Android\\Sdk",
+    "ANDROID_SDK_ROOT": "D:\\Android\\Sdk",
+    "PATH": "${env:PATH};D:\\Android\\Sdk\\platform-tools;D:\\Android\\Sdk\\emulator"
+  }
+}
