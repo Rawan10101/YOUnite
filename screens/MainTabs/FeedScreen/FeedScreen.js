@@ -12,8 +12,8 @@ import {
   View,
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
+import { useAppContext } from '../../../contexts/AppContext';
+import { db } from '../../../firebaseConfig';
 
 export default function FeedScreen({ navigation }) {
   const { user, followedOrganizations } = useAppContext();
@@ -27,49 +27,51 @@ export default function FeedScreen({ navigation }) {
       if (unsubscribe) unsubscribe();
     };
   }, [user?.uid, followedOrganizations]);
-const fetchFeedData = () => {
-  setLoading(true);
-  console.log('Fetching posts from Firestore...'); // Debug log
-  
-  const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
 
-  const unsubscribePosts = onSnapshot(
-    postsQuery, 
-    snapshot => {
-      console.log('Posts snapshot received:', snapshot.size); // Debug log
-      
-      const posts = snapshot.docs.map(doc => {
-        const data = doc.data();
-        console.log('Post data:', data); // Debug log
+  const fetchFeedData = () => {
+    setLoading(true);
+    console.log('Fetching posts from Firestore...'); // Debug log
+    
+    const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
+
+    const unsubscribePosts = onSnapshot(
+      postsQuery, 
+      snapshot => {
+        console.log('Posts snapshot received:', snapshot.size); // Debug log
         
-        return {
-          id: doc.id,
-          type: data.type || 'user_post',
-          authorId: data.authorId,
-          authorType: data.authorType || 'user',
-          authorName: data.authorName,
-          authorAvatar: data.authorAvatar || 'https://via.placeholder.com/50',
-          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toLocaleString() : new Date().toLocaleString(),
-          text: data.text || '',
-          imageUrl: data.imageUrl || null,
-        };
-      });
-      
-      console.log('Processed posts:', posts.length); // Debug log
-      setFeedData(posts);
-      setLoading(false);
-      setRefreshing(false);
-    }, 
-    error => {
-      console.error('Firestore error:', error); // Debug log
-      Alert.alert('Error', 'Failed to load posts: ' + error.message);
-      setLoading(false);
-      setRefreshing(false);
-    }
-  );
+        const posts = snapshot.docs.map(doc => {
+          const data = doc.data();
+          console.log('Post data:', data); // Debug log
+          
+          return {
+            id: doc.id,
+            type: data.type || 'user_post',
+            authorId: data.authorId,
+            authorType: data.authorType || 'user',
+            authorName: data.authorName,
+            authorAvatar: data.authorAvatar || 'https://via.placeholder.com/50',
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toLocaleString() : new Date().toLocaleString(),
+            text: data.text || '',
+            imageUrl: data.imageUrl || null,
+          };
+        });
+        
+        console.log('Processed posts:', posts.length); // Debug log
+        setFeedData(posts);
+        setLoading(false);
+        setRefreshing(false);
+      }, 
+      error => {
+        console.error('Firestore error:', error); // Debug log
+        Alert.alert('Error', 'Failed to load posts: ' + error.message);
+        setLoading(false);
+        setRefreshing(false);
+      }
+    );
 
-  return unsubscribePosts;
-};
+    return unsubscribePosts;
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchFeedData();
@@ -123,6 +125,14 @@ const fetchFeedData = () => {
       <View style={styles.topBar}>
         <Text style={styles.appName}>YOUnite</Text>
         <View style={styles.topBarButtons}>
+          {/* Create Post Button */}<TouchableOpacity
+  style={styles.iconButton}
+  onPress={() => navigation.navigate('CreateReport')}
+>
+  <Ionicons name="flag-outline" size={28} color="#2B2B2B" />
+</TouchableOpacity>
+
+          
           <TouchableOpacity
             style={styles.iconButton}
             onPress={() => navigation.navigate('Notifications')}
@@ -132,6 +142,7 @@ const fetchFeedData = () => {
               <Text style={styles.notificationCount}>3</Text>
             </View>
           </TouchableOpacity>
+          
           <TouchableOpacity
             style={styles.iconButton}
             onPress={() => navigation.navigate('Chat')}
@@ -176,9 +187,12 @@ const styles = StyleSheet.create({
   },
   topBarButtons: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
+
   iconButton: {
-    marginLeft: 20,
+    marginLeft: 8,
     position: 'relative',
   },
   notificationBadge: {

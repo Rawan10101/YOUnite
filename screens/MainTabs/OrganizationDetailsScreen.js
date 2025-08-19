@@ -16,6 +16,7 @@ import {
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../contexts/AppContext';
 import { db } from '../../firebaseConfig';
+import { setDoc, getDoc } from 'firebase/firestore';
 
 export default function OrganizationDetailsScreen({ route, navigation }) {
   const { organization: initialOrganization } = route.params;
@@ -115,43 +116,42 @@ export default function OrganizationDetailsScreen({ route, navigation }) {
     };
   };
 
-  const handleFollow = async () => {
-    if (!user?.uid) {
-      Alert.alert('Error', 'You must be logged in to follow organizations.');
-      return;
+ const handleFollow = async () => {
+  if (!user?.uid || !organization?.id) {
+    Alert.alert('Error', 'User or organization info is missing.');
+    return;
+  }
+
+  try {
+    const orgRef = doc(db, 'organizations', organization.id);
+    const userRef = doc(db, 'users', user.uid);
+
+    // Ensure org and user docs exist
+    const orgSnap = await getDoc(orgRef);
+    if (!orgSnap.exists()) {
+      await setDoc(orgRef, { followers: [] }, { merge: true });
+    }
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) {
+      await setDoc(userRef, { followedOrganizations: [] }, { merge: true });
     }
 
-    try {
-      const orgRef = doc(db, 'organizations', organization.id);
-      const userRef = doc(db, 'users', user.uid);
-
-      if (isFollowing) {
-        // Unfollow
-        await updateDoc(orgRef, {
-          followers: arrayRemove(user.uid)
-        });
-        await updateDoc(userRef, {
-          followedOrganizations: arrayRemove(organization.id)
-        });
-        setFollowedOrganizations(prev => prev.filter(id => id !== organization.id));
-        Alert.alert('Unfollowed', `You are no longer following ${organization.name}.`);
-      } else {
-        // Follow
-        await updateDoc(orgRef, {
-          followers: arrayUnion(user.uid)
-        });
-        await updateDoc(userRef, {
-          followedOrganizations: arrayUnion(organization.id)
-        });
-        setFollowedOrganizations(prev => [...prev, organization.id]);
-        Alert.alert('Following', `You are now following ${organization.name}!`);
-      }
-    } catch (error) {
-      console.error('Error updating follow status:', error);
-      Alert.alert('Error', 'Failed to update follow status. Please try again.');
+    if (isFollowing) {
+      await updateDoc(orgRef, { followers: arrayRemove(user.uid) });
+      await updateDoc(userRef, { followedOrganizations: arrayRemove(organization.id) });
+      setFollowedOrganizations(prev => prev.filter(id => id !== organization.id));
+      Alert.alert('Unfollowed', `You are no longer following ${organization.name}.`);
+    } else {
+      await updateDoc(orgRef, { followers: arrayUnion(user.uid) });
+      await updateDoc(userRef, { followedOrganizations: arrayUnion(organization.id) });
+      setFollowedOrganizations(prev => [...prev, organization.id]);
+      Alert.alert('Following', `You are now following ${organization.name}!`);
     }
-  };
-
+  } catch (error) {
+    console.error('Error updating follow status:', error);
+    Alert.alert('Error', 'Failed to update follow status. Please try again.');
+  }
+};
   const handleContact = (type) => {
     switch (type) {
       case 'email':

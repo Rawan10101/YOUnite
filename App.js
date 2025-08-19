@@ -17,12 +17,13 @@ import SignupScreen from './screens/Auth/SignupScreen';
 import DiscoverScreen from './screens/MainTabs/DiscoverScreen';
 import EventDetailsScreen from './screens/MainTabs/EventDetailsScreen';
 import EventsScreen from './screens/MainTabs/EventsScreen';
-import FeedScreen from './screens/MainTabs/FeedScreen';
+import FeedScreen from './screens/MainTabs/FeedScreen/FeedScreen';
 import OrganizationDetailsScreen from './screens/MainTabs/OrganizationDetailsScreen';
 import ProfileScreen from './screens/MainTabs/ProfileScreen';
 import SettingsScreen from './screens/MainTabs/SettingsScreen';
-import ChatScreen from './screens/MainTabs/ChatScreen';
+import ChatScreen from './screens/MainTabs/FeedScreen/ChatScreen';
 import CommentsScreen from './screens/MainTabs/CommentsScreen';
+import CreateReportScreen from './screens/MainTabs/FeedScreen/CreateReportScreen'; // Fixed import
 
 // Organization Screens
 import CreateEventScreen from './screens/org/CreateEventScreen';
@@ -141,7 +142,11 @@ function FeedStackScreen() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="FeedMain" component={FeedScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
-      
+<Stack.Screen 
+  name="CreateReport" 
+  component={CreateReportScreen}
+  options={{ headerShown: false }}/>
+
       {/* ADD THIS LINE */}
       <Stack.Screen 
         name="Comments" 

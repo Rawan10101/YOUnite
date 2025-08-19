@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -9,60 +10,102 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-
 import * as Animatable from 'react-native-animatable';
-
-// Add the missing import for useAppContext
 import { useAppContext } from '../../contexts/AppContext';
+import { db } from '../../firebaseConfig';
+import { 
+  collection,  
+  query,        
+  where,       
+  orderBy,     
+  limit        
+} from 'firebase/firestore';
 
 export default function ProfileScreen({ navigation }) {
-  const { user, setUser, followedOrganizations, registeredEvents } = useAppContext();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [locationEnabled, setLocationEnabled] = useState(true);
+  const { user, setUser, followedOrganizations } = useAppContext();
+  const [userStats, setUserStats] = useState({
+    totalHours: 0,
+    eventsAttended: 0,
+    eventsRegistered: 0,
+    organizationsFollowed: 0,
+  });
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Use real user data when available, fallback to mock data
-  const displayUser = {
-    id: user?.uid || '1',
-    name: user?.displayName || user?.email?.split('@')[0] || 'User', // Use displayName or extract name from email
-    email: user?.email || 'user@email.com',
-    avatar: user?.photoURL || 'https://via.placeholder.com/100',
-    joinDate: user?.metadata?.creationTime ? 
-      new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 
-      'January 2023',
-    totalHours: 156, // You can store this in your database later
-    eventsAttended: 23,
-    organizationsFollowed: followedOrganizations.length,
-    badges: [
-      { id: '1', name: 'Environmental Hero', icon: 'leaf', color: '#4CAF50' },
-      { id: '2', name: 'Community Champion', icon: 'people', color: '#2196F3' },
-      { id: '3', name: 'Event Organizer', icon: 'calendar', color: '#FF9800' },
-    ],
-    recentActivity: [
-      {
-        id: '1',
-        type: 'event_completed',
-        title: 'Completed Beach Cleanup Drive',
-        date: '2 days ago',
-        icon: 'checkmark-circle',
-        color: '#4CAF50',
-      },
-      {
-        id: '2',
-        type: 'organization_followed',
-        title: 'Started following Green Earth Initiative',
-        date: '1 week ago',
-        icon: 'heart',
-        color: '#FF4757',
-      },
-      {
-        id: '3',
-        type: 'event_registered',
-        title: 'Registered for Tree Planting Marathon',
-        date: '2 weeks ago',
-        icon: 'calendar',
-        color: '#4e8cff',
-      },
-    ],
+  useEffect(() => {
+    if (user?.uid) {
+      fetchUserData();
+      setupActivityListener();
+    }
+  }, [user?.uid, followedOrganizations]);
+
+  const fetchUserData = async () => {
+    try {
+      // Get user document for additional stats
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setUserStats(prev => ({
+          ...prev,
+          totalHours: userData.totalVolunteerHours || 0,
+          eventsAttended: userData.eventsAttended || 0,
+          eventsRegistered: userData.registeredEvents?.length || 0,
+          organizationsFollowed: followedOrganizations.length,
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const setupActivityListener = () => {
+    // Listen to user's posts for recent activity
+    const userPostsQuery = query(
+      collection(db, 'posts'),
+      where('authorId', '==', user.uid),
+      orderBy('createdAt', 'desc'),
+      limit(5)
+    );
+
+    const unsubscribe = onSnapshot(userPostsQuery, (querySnapshot) => {
+      const activities = [];
+      
+      querySnapshot.docs.forEach(doc => {
+        const postData = doc.data();
+        activities.push({
+          id: doc.id,
+          type: postData.type === 'report' ? 'report_created' : 'post_created',
+          title: postData.type === 'report' 
+            ? 'Created a new report' 
+            : 'Shared a new post',
+          date: postData.createdAt?.toDate ? 
+            getTimeAgo(postData.createdAt.toDate()) : 
+            'Recently',
+          icon: postData.type === 'report' ? 'flag' : 'chatbox',
+          color: postData.type === 'report' ? '#E33F3F' : '#4e8cff',
+        });
+      });
+
+      setRecentActivities(activities);
+    }, (error) => {
+      console.error('Error fetching activities:', error);
+    });
+
+    return unsubscribe;
+  };
+
+  const getTimeAgo = (date) => {
+    const now = new Date();
+    const diffInMs = now - date;
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    
+    if (diffInDays === 0) return 'Today';
+    if (diffInDays === 1) return '1 day ago';
+    if (diffInDays < 7) return `${diffInDays} days ago`;
+    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
+    return `${Math.floor(diffInDays / 30)} months ago`;
   };
 
   const handleLogout = () => {
@@ -74,7 +117,7 @@ export default function ProfileScreen({ navigation }) {
         { 
           text: 'Logout', 
           style: 'destructive',
-          onPress: () => setUser(null) // This will automatically switch to Auth due to conditional rendering
+          onPress: () => setUser(null)
         },
       ]
     );
@@ -97,20 +140,6 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.statTitle}>{title}</Text>
         </View>
       </View>
-    </Animatable.View>
-  );
-
-  const renderBadge = ({ item, index }) => (
-    <Animatable.View
-      animation="fadeInRight"
-      duration={600}
-      delay={index * 100}
-      style={styles.badge}
-    >
-      <View style={[styles.badgeIcon, { backgroundColor: item.color }]}>
-        <Ionicons name={item.icon} size={20} color="#fff" />
-      </View>
-      <Text style={styles.badgeName}>{item.name}</Text>
     </Animatable.View>
   );
 
@@ -152,15 +181,15 @@ export default function ProfileScreen({ navigation }) {
     },
     {
       id: '4',
-      title: 'Achievements',
-      icon: 'trophy-outline',
-      onPress: () => Alert.alert('Achievements', 'Achievements page coming soon!'),
+      title: 'My Reports',
+      icon: 'flag-outline',
+      onPress: () => Alert.alert('Reports', 'My Reports page coming soon!'),
     },
     {
       id: '5',
       title: 'Settings',
       icon: 'settings-outline',
-onPress: () => navigation.navigate('Settings'),
+      onPress: () => navigation.navigate('Settings'),
     },
     {
       id: '6',
@@ -170,26 +199,42 @@ onPress: () => navigation.navigate('Settings'),
     },
   ];
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Animatable.View animation="pulse" iterationCount="infinite">
+          <Ionicons name="person" size={48} color="#4e8cff" />
+        </Animatable.View>
+        <Text style={styles.loadingText}>Loading profile...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      {/* <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#2B2B2B" />
-        </TouchableOpacity>
-      </View> */}
-
       {/* Profile Info */}
       <Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
-        <Image source={{ uri: displayUser.avatar }} style={styles.avatar} />
-        <Text style={styles.userName}>{displayUser.name}</Text>
-        <Text style={styles.userEmail}>{displayUser.email}</Text>
-        <Text style={styles.joinDate}>Member since {displayUser.joinDate}</Text>
+        <Image 
+          source={{ uri: user?.photoURL || 'https://via.placeholder.com/100' }} 
+          style={styles.avatar} 
+        />
+        <Text style={styles.userName}>
+          {user?.displayName || user?.email?.split('@')[0] || 'User'}
+        </Text>
+        <Text style={styles.userEmail}>{user?.email || 'No email'}</Text>
+        <Text style={styles.joinDate}>
+          Member since {user?.metadata?.creationTime ? 
+            new Date(user.metadata.creationTime).toLocaleDateString('en-US', { 
+              month: 'long', 
+              year: 'numeric' 
+            }) : 
+            'Recently'
+          }
+        </Text>
         
         <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
           <Ionicons name="create-outline" size={16} color="#4e8cff" />
-          <Text style={styles.editButtonText}>View Profile</Text>
+          <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
       </Animatable.View>
 
@@ -197,38 +242,24 @@ onPress: () => navigation.navigate('Settings'),
       <View style={styles.statsSection}>
         <Text style={styles.sectionTitle}>Your Impact</Text>
         <View style={styles.statsGrid}>
-          {renderStatCard('Hours Volunteered', displayUser.totalHours, 'time-outline', '#4CAF50')}
-          {renderStatCard('Events Attended', displayUser.eventsAttended, 'calendar-outline', '#2196F3')}
-          {renderStatCard('Organizations', displayUser.organizationsFollowed, 'heart-outline', '#FF4757')}
-          {renderStatCard('Upcoming Events', registeredEvents.length, 'arrow-up-circle-outline', '#FF9800')}
+          {renderStatCard('Hours Volunteered', userStats.totalHours, 'time-outline', '#4CAF50')}
+          {renderStatCard('Events Attended', userStats.eventsAttended, 'calendar-outline', '#2196F3')}
+          {renderStatCard('Organizations', userStats.organizationsFollowed, 'heart-outline', '#FF4757')}
+          {renderStatCard('Registered Events', userStats.eventsRegistered, 'arrow-up-circle-outline', '#FF9800')}
         </View>
       </View>
 
-      {/* Badges */}
-      <View style={styles.badgesSection}>
-        <Text style={styles.sectionTitle}>Achievements</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.badgesList}>
-            {displayUser.badges.map((badge, index) => (
-              <View key={badge.id}>
-                {renderBadge({ item: badge, index })}
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      </View>
-
       {/* Recent Activity */}
-      <View style={styles.activitySection}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
-        {displayUser.recentActivity.map((activity, index) => (
-          <View key={activity.id}>
-            {renderActivity({ item: activity, index })}
-          </View>
-        ))}
-      </View>
-
-
+      {recentActivities.length > 0 && (
+        <View style={styles.activitySection}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          {recentActivities.map((activity, index) => (
+            <View key={activity.id}>
+              {renderActivity({ item: activity, index })}
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Menu Items */}
       <View style={styles.menuSection}>
