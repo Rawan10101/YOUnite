@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 18,
-    color: '#2B2B2B',
+    color: '#2B2B2B2B',
     fontWeight: '600',
   },
 });
