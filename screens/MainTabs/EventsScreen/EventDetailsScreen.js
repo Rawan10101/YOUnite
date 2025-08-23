@@ -12,8 +12,8 @@ import {
   View,
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
+import { useAppContext } from '../../../contexts/AppContext';
+import { db } from '../../../firebaseConfig';
 
 export default function EventDetailsScreen({ route, navigation }) {
   const { event: initialEvent } = route.params; // Rename to initialEvent
@@ -162,7 +162,7 @@ export default function EventDetailsScreen({ route, navigation }) {
             </View>
           </View>
 
-          {event.requirements && event.requirements.length > 0 && (
+          {Array.isArray(event.requirements) && event.requirements.length > 0 && (
             <View style={styles.requirementsSection}>
               <Text style={styles.sectionTitle}>Requirements</Text>
               {event.requirements.map((requirement, index) => (

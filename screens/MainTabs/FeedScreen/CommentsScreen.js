@@ -1,21 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, orderBy, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { useEffect, useState, useRef } from 'react';
+import { addDoc, collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Image
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
+import { useAppContext } from '../../../contexts/AppContext';
+import { db } from '../../../firebaseConfig';
 
 export default function CommentsScreen({ navigation, route }) {
   const { user } = useAppContext();

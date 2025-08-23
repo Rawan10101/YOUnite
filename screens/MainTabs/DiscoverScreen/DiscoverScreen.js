@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { arrayRemove, arrayUnion, collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -12,8 +12,8 @@ import {
   View,
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
+import { useAppContext } from '../../../contexts/AppContext';
+import { db } from '../../../firebaseConfig';
 
 export default function DiscoverScreen({ navigation }) {
   const { user, followedOrganizations, setFollowedOrganizations } = useAppContext();
@@ -103,43 +103,58 @@ export default function DiscoverScreen({ navigation }) {
     setFilteredOrganizations(filtered);
   };
 
-  const handleFollow = async (orgId) => {
-    if (!user?.uid) {
-      Alert.alert('Error', 'You must be logged in to follow organizations.');
-      return;
+const handleFollow = async (orgId) => {
+  if (!user?.uid) {
+    Alert.alert('Error', 'You must be logged in to follow organizations.');
+    return;
+  }
+
+  const orgToUpdate = organizations.find(org => org.id === orgId);
+  if (!orgToUpdate) return;
+
+  try {
+    console.log('Updating organization followers for:', orgId);
+    const orgRef = doc(db, 'organizations', orgId);
+
+    if (orgToUpdate.isFollowing) {
+      // Unfollow - remove user from organization's followers
+      await updateDoc(orgRef, {
+        followers: arrayRemove(user.uid)
+      });
+      
+      setFollowedOrganizations(prev => prev.filter(id => id !== orgId));
+      console.log('Successfully unfollowed');
+      
+    } else {
+      // Follow - add user to organization's followers
+      await updateDoc(orgRef, {
+        followers: arrayUnion(user.uid)
+      });
+      
+      setFollowedOrganizations(prev => [...prev, orgId]);
+      console.log('Successfully followed');
     }
 
-    const orgToUpdate = organizations.find(org => org.id === orgId);
-    if (!orgToUpdate) return;
-
-    try {
-      const orgRef = doc(db, 'organizations', orgId);
-      const userRef = doc(db, 'users', user.uid);
-
-      if (orgToUpdate.isFollowing) {
-        // Unfollow
-        await updateDoc(orgRef, {
-          followers: arrayRemove(user.uid)
-        });
-        await updateDoc(userRef, {
-          followedOrganizations: arrayRemove(orgId)
-        });
-        setFollowedOrganizations(prev => prev.filter(id => id !== orgId));
-      } else {
-        // Follow
-        await updateDoc(orgRef, {
-          followers: arrayUnion(user.uid)
-        });
-        await updateDoc(userRef, {
-          followedOrganizations: arrayUnion(orgId)
-        });
-        setFollowedOrganizations(prev => [...prev, orgId]);
-      }
-    } catch (error) {
-      console.error('Error updating follow status:', error);
-      Alert.alert('Error', 'Failed to update follow status. Please try again.');
+  } catch (error) {
+    console.error('Full error object:', error);
+    console.error('Error code:', error?.code);
+    console.error('Error message:', error?.message);
+    
+    let errorMessage = 'Failed to update follow status';
+    
+    if (error?.code === 'permission-denied') {
+      errorMessage = 'You do not have permission to perform this action';
+    } else if (error?.code === 'not-found') {
+      errorMessage = 'Organization not found';
+    } else if (error?.message) {
+      errorMessage = error.message;
     }
-  };
+    
+    Alert.alert('Error', errorMessage);
+  }
+};
+
+
 
   const getCategoryColor = (category) => {
     const colors = {

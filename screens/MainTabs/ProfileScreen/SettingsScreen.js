@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../contexts/AppContext';
+import { useAppContext } from '../../../contexts/AppContext';
 
 export default function SettingsScreen({ navigation }) {
   const { user } = useAppContext();

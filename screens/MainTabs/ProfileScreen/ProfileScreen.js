@@ -1,5 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import {
+  collection, doc, getDoc, limit, onSnapshot, orderBy, query,
+  where
+} from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -11,15 +14,54 @@ import {
   View
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
-import { 
-  collection,  
-  query,        
-  where,       
-  orderBy,     
-  limit        
-} from 'firebase/firestore';
+import { useAppContext } from '../../../contexts/AppContext';
+import { db } from '../../../firebaseConfig';
+// Add this component at the top of your ProfileScreen file, after imports
+const ProfileAvatar = ({ photoURL, displayName, size = 100 }) => {
+  const getInitials = (name) => {
+    if (!name) return 'V'; // Default to 'V' for Volunteer
+    return name
+      .split(' ')
+      .map(word => word[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
+  
+  const getAvatarColor = (name) => {
+    const colors = ['#4e8cff', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF'];
+    if (!name) return colors;
+    const index = name.length % colors.length;
+    return colors[index];
+  };
+
+  // Only show default if user has NO profile image set (photoURL is null/undefined)
+  if (!photoURL) {
+    return (
+      <View style={[
+        styles.defaultAvatar, 
+        { 
+          width: size, 
+          height: size, 
+          borderRadius: size / 2,
+          backgroundColor: getAvatarColor(displayName)
+        }
+      ]}>
+        <Text style={[styles.avatarText, { fontSize: size * 0.4 }]}>
+          {getInitials(displayName)}
+        </Text>
+      </View>
+    );
+  }
+
+  // If user has set a profile image, always try to show it (no fallback on error)
+  return (
+    <Image 
+      source={{ uri: photoURL }} 
+      style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+    />
+  );
+};
 
 export default function ProfileScreen({ navigation }) {
   const { user, setUser, followedOrganizations } = useAppContext();
@@ -160,44 +202,51 @@ export default function ProfileScreen({ navigation }) {
     </Animatable.View>
   );
 
-  const menuItems = [
-    {
-      id: '1',
-      title: 'Edit Profile',
-      icon: 'person-outline',
-      onPress: handleEditProfile,
-    },
-    {
-      id: '2',
-      title: 'My Events',
-      icon: 'calendar-outline',
-      onPress: () => navigation.navigate('Events', { screen: 'EventsMain' }),
-    },
-    {
-      id: '3',
-      title: 'Followed Organizations',
-      icon: 'heart-outline',
-      onPress: () => navigation.navigate('DiscoverMain'),
-    },
-    {
-      id: '4',
-      title: 'My Reports',
-      icon: 'flag-outline',
-      onPress: () => Alert.alert('Reports', 'My Reports page coming soon!'),
-    },
-    {
-      id: '5',
-      title: 'Settings',
-      icon: 'settings-outline',
-      onPress: () => navigation.navigate('Settings'),
-    },
-    {
-      id: '6',
-      title: 'Help & Support',
-      icon: 'help-circle-outline',
-      onPress: () => Alert.alert('Help', 'Help & Support coming soon!'),
-    },
-  ];
+const menuItems = [
+  {
+    id: '1',
+    title: 'Edit Profile',
+    icon: 'create-outline',
+    onPress: () => navigation.navigate('EditProfile'),
+  },
+  {
+    id: '2',
+    title: 'Profile Details',
+    icon: 'person-circle-outline',
+    onPress: () => navigation.navigate('ProfileDetails'),
+  },
+  {
+    id: '3',
+    title: 'My Events',
+    icon: 'calendar-outline',
+    onPress: () => navigation.navigate('Events', { screen: 'EventsMain' }),
+  },
+  {
+    id: '4',
+    title: 'Followed Organizations',
+    icon: 'heart-outline',
+    onPress: () => navigation.navigate('DiscoverMain'),
+  },
+  {
+    id: '5',
+    title: 'My Reports',
+    icon: 'flag-outline',
+    onPress: () => Alert.alert('Reports', 'My Reports page coming soon!'),
+  },
+  {
+    id: '6',
+    title: 'Settings',
+    icon: 'settings-outline',
+    onPress: () => navigation.navigate('Settings'),
+  },
+  {
+    id: '7',
+    title: 'Help & Support',
+    icon: 'help-circle-outline',
+    onPress: () => Alert.alert('Help', 'Help & Support coming soon!'),
+  },
+];
+
 
   if (loading) {
     return (
@@ -213,30 +262,21 @@ export default function ProfileScreen({ navigation }) {
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Profile Info */}
-      <Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
-        <Image 
-          source={{ uri: user?.photoURL || 'https://via.placeholder.com/100' }} 
-          style={styles.avatar} 
-        />
-        <Text style={styles.userName}>
-          {user?.displayName || user?.email?.split('@')[0] || 'User'}
-        </Text>
-        <Text style={styles.userEmail}>{user?.email || 'No email'}</Text>
-        <Text style={styles.joinDate}>
-          Member since {user?.metadata?.creationTime ? 
-            new Date(user.metadata.creationTime).toLocaleDateString('en-US', { 
-              month: 'long', 
-              year: 'numeric' 
-            }) : 
-            'Recently'
-          }
-        </Text>
-        
-        <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
-          <Ionicons name="create-outline" size={16} color="#4e8cff" />
-          <Text style={styles.editButtonText}>Edit Profile</Text>
-        </TouchableOpacity>
-      </Animatable.View>
+ {/* Profile Info - Clean & Simple */}
+<Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
+  {/* Profile Avatar & Name */}
+  <View style={styles.profileInfo}>
+    <ProfileAvatar 
+      photoURL={user?.photoURL} 
+      displayName={user?.displayName || user?.email?.split('@')[0]} 
+      size={80}
+    />
+    <Text style={styles.userName}>
+      {user?.displayName || user?.email?.split('@') || 'Volunteer'}
+    </Text>
+  </View>
+</Animatable.View>
+
 
       {/* Stats */}
       <View style={styles.statsSection}>
@@ -299,6 +339,49 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
+
+  avatar: {
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+ defaultAvatar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  avatarText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+
+  profileSection: {
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    paddingVertical: 30, // Fixed the padding
+    marginBottom: 12,
+  },
+  profileInfo: {
+    alignItems: 'center',
+  },
+    userName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2B2B2B',
+    marginTop: 15,
+    textAlign: 'center',
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -318,7 +401,7 @@ const styles = StyleSheet.create({
   profileSection: {
     backgroundColor: '#fff',
     alignItems: 'center',
-    paddingVertical: 9,
+    paddingVertical: 30,
     marginBottom: 12,
   },
   avatar: {

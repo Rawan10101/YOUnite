@@ -3,7 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import {
-    ActivityIndicator, // ✅ Make sure this is imported
+    ActivityIndicator, 
     Alert,
     StyleSheet,
     Text,

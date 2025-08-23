@@ -69,74 +69,103 @@ export default function CreateReportScreen({ navigation }) {
     });
   };
 
-  const handleSubmitReport = async () => {
-    if (!reportText.trim() && !selectedImage) {
-      Alert.alert('Error', 'Please add some content or an image to your report.');
-      return;
+const handleSubmitReport = async () => {
+  if (!reportText.trim() && !selectedImage) {
+    Alert.alert('Error', 'Please add some content or an image to your report.');
+    return;
+  }
+
+  if (mentionedOrganizations.length === 0) {
+    Alert.alert('Error', 'Please mention at least one organization for your report.');
+    return;
+  }
+
+  setIsSubmitting(true);
+  console.log('Starting report submission...');
+
+  try {
+    let imageUrl = null;
+    if (selectedImage) {
+      console.log('Uploading image...');
+      imageUrl = await uploadImage(selectedImage);
+      console.log('Image uploaded successfully:', imageUrl);
     }
 
-    if (mentionedOrganizations.length === 0) {
-      Alert.alert('Error', 'Please mention at least one organization for your report.');
-      return;
-    }
+    // Fixed: Convert all undefined values to null or remove them
+    const reportData = {
+      text: reportText.trim() || null,
+      imageUrl: imageUrl || null,
+      reporterId: user.uid,
+      reporterName: user.displayName || user.email?.split('@')[0] || 'Anonymous',
+      reporterAvatar: user.photoURL || null, // Convert undefined to null
+      mentionedOrganizations: mentionedOrganizations.map(org => ({
+        id: org.id || null,
+        name: org.name || null,
+        logo: org.logo || null
+      })),
+      isPublic: isPublic,
+      type: 'report',
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      likes: [],
+      comments: [],
+      views: [],
+    };
 
-    setIsSubmitting(true);
+    console.log('Report data prepared:', reportData);
 
-    try {
-      let imageUrl = null;
-      if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage);
-      }
-
-      const reportData = {
-        text: reportText.trim(),
-        imageUrl: imageUrl,
-        reporterId: user.uid,
-        reporterName: user.displayName || user.email.split('@')[0],
-        reporterAvatar: user.photoURL || 'https://via.placeholder.com/50',
-        mentionedOrganizations: mentionedOrganizations.map(org => ({
-          id: org.id,
-          name: org.name,
-          logo: org.logo || 'https://via.placeholder.com/50'
-        })),
-        isPublic: isPublic,
-        type: 'report',
-        status: 'pending', // pending, reviewed, resolved
-        createdAt: serverTimestamp(),
-        likes: [],
-        comments: [],
-        views: [],
+    // If public, save to posts collection for community feed
+    if (isPublic) {
+      console.log('Saving to posts collection...');
+      const postData = {
+        ...reportData,
+        authorId: user.uid,
+        authorName: user.displayName || user.email?.split('@')[0] || 'Anonymous',
+        authorAvatar: user.photoURL || null, // Convert undefined to null
+        authorType: 'user',
       };
-
-      // If public, save to posts collection for community feed
-      if (isPublic) {
-        await addDoc(collection(db, 'posts'), {
-          ...reportData,
-          authorId: user.uid,
-          authorName: user.displayName || user.email.split('@')[0],
-          authorAvatar: user.photoURL || 'https://via.placeholder.com/50',
-          authorType: 'user',
-        });
-      }
-
-      // Always save to reports collection for organization managers
-      await addDoc(collection(db, 'reports'), reportData);
-
-      Alert.alert(
-        'Success', 
-        isPublic 
-          ? 'Your report has been submitted and posted to the community!' 
-          : 'Your report has been sent to the mentioned organizations!',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-
-    } catch (error) {
-      console.error('Error submitting report:', error);
-      Alert.alert('Error', 'Failed to submit report. Please try again.');
-    } finally {
-      setIsSubmitting(false);
+      
+      await addDoc(collection(db, 'posts'), postData);
+      console.log('Post saved successfully');
     }
-  };
+
+    // Always save to reports collection for organization managers
+    console.log('Saving to reports collection...');
+    await addDoc(collection(db, 'reports'), reportData);
+    console.log('Report saved successfully');
+
+    Alert.alert(
+      'Success', 
+      isPublic 
+        ? 'Your report has been submitted and posted to the community!' 
+        : 'Your report has been sent to the mentioned organizations!',
+      [{ text: 'OK', onPress: () => navigation.goBack() }]
+    );
+
+  } catch (error) {
+    console.error('Error submitting report:', error);
+    console.error('Error code:', error?.code);
+    console.error('Error message:', error?.message);
+    
+    let errorMessage = 'Failed to submit report. Please try again.';
+    
+    if (error?.code === 'permission-denied') {
+      errorMessage = 'Permission denied. Please check your account permissions.';
+    } else if (error?.code === 'invalid-argument') {
+      errorMessage = 'Invalid data format. Please check your input.';
+    } else if (error?.message?.includes('invalid data')) {
+      errorMessage = 'Some required information is missing. Please check all fields.';
+    } else if (error?.message) {
+      errorMessage = `Error: ${error.message}`;
+    }
+    
+    Alert.alert('Error', errorMessage);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+
 
   return (
     <KeyboardAvoidingView 
@@ -430,7 +459,7 @@ const styles = StyleSheet.create({
   },
   organizationOptionSelected: {
     borderColor: '#007AFF',
-    backgroundColor: '#F0F8FF',
+    backgroundColor: '#2B2B2B',
   },
   organizationOptionText: {
     marginLeft: 8,

@@ -20,10 +20,9 @@ export default function LoginScreen({ navigation }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const userData = userCredential.user; // Get the user data from Firebase
       
-      // ✅ Use state management instead of manual navigation
+      // Use state management instead of manual navigation
       setUser(userData); // This automatically switches to MainTabs due to conditional rendering
       
-      // ❌ Remove this line completely:
       // navigation.replace('MainTabs');
       
     } catch (err) {

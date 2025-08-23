@@ -14,8 +14,8 @@ import {
   View
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
+import { useAppContext } from '../../../contexts/AppContext';
+import { db } from '../../../firebaseConfig';
 
 export default function EventsScreen({ navigation }) {
   const { user, registeredEvents, setRegisteredEvents } = useAppContext();
@@ -222,7 +222,7 @@ export default function EventsScreen({ navigation }) {
       <TouchableOpacity
         onPress={() => navigation.navigate('EventDetails', { event: item })}
       >
-        <Image source={{ uri: item.image }} style={styles.eventImage} />
+        {/* <Image source={{ uri: item.image }} style={styles.eventImage} /> */}
         
         {item.status === 'past' && (
           <View style={styles.pastEventOverlay}>
@@ -513,19 +513,20 @@ const styles = StyleSheet.create({
   horizontalList: {
     paddingHorizontal: 20,
   },
-  eventCard: {
-    width: 260,
-    marginRight: 15,
-    backgroundColor: '#FFFFFF', // White background for event cards
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5E5', // Light border
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
+eventCard: {
+  width: 270,
+  marginRight: 15,
+  backgroundColor: '#FFFFFF',
+  borderRadius: 16, // softer corners
+  borderWidth: 1,
+  borderColor: 'rgba(0,0,0,0.05)', // lighter border
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.12,
+  shadowRadius: 8,
+  elevation: 4,
+},
+
   pastEventCard: {
     opacity: 0.7,
   },
@@ -558,7 +559,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   eventTitleContainer: {
     flex: 1,
@@ -567,19 +568,19 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2B2B2B', // Dark text for event titles
-    marginBottom: 5,
+    color: '#2B2B2B', 
+    marginBottom: 6,
   },
   organizationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  organizationLogo: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: 5,
-  },
+  // organizationLogo: {
+  //   width: 20,
+  //   height: 20,
+  //   borderRadius: 10,
+  //   marginRight: 5,
+  // },
   organizationName: {
     fontSize: 12,
     color: '#666666', // Medium gray for organization names
@@ -589,13 +590,16 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
   },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 5,
-    marginBottom: 5,
-  },
+ badge: {
+  paddingHorizontal: 10,
+  paddingVertical: 5,
+  borderRadius: 16, // pill shape
+  marginLeft: 6,
+  shadowColor: '#000',
+  shadowOpacity: 0.1,
+  shadowRadius: 3,
+  elevation: 2,
+},
   badgeText: {
     fontSize: 10,
     color: '#fff',

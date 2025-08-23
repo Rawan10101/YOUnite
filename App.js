@@ -14,17 +14,18 @@ import { db } from './firebaseConfig';
 // Volunteer Screens
 import LoginScreen from './screens/Auth/LoginScreen';
 import SignupScreen from './screens/Auth/SignupScreen';
-import DiscoverScreen from './screens/MainTabs/DiscoverScreen';
-import EventDetailsScreen from './screens/MainTabs/EventDetailsScreen';
-import EventsScreen from './screens/MainTabs/EventsScreen';
+import DiscoverScreen from './screens/MainTabs/DiscoverScreen/DiscoverScreen';
+import EventDetailsScreen from './screens/MainTabs/EventsScreen/EventDetailsScreen';
+import EventsScreen from './screens/MainTabs/EventsScreen/EventsScreen';
+import ChatScreen from './screens/MainTabs/FeedScreen/ChatScreen';
+import CommentsScreen from './screens/MainTabs/FeedScreen/CommentsScreen';
+import CreateReportScreen from './screens/MainTabs/FeedScreen/CreateReportScreen'; // Fixed import
 import FeedScreen from './screens/MainTabs/FeedScreen/FeedScreen';
 import OrganizationDetailsScreen from './screens/MainTabs/OrganizationDetailsScreen';
-import ProfileScreen from './screens/MainTabs/ProfileScreen';
-import SettingsScreen from './screens/MainTabs/SettingsScreen';
-import ChatScreen from './screens/MainTabs/FeedScreen/ChatScreen';
-import CommentsScreen from './screens/MainTabs/CommentsScreen';
-import CreateReportScreen from './screens/MainTabs/FeedScreen/CreateReportScreen'; // Fixed import
-
+import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScreen';
+import ProfileDetailsScreen from './screens/MainTabs/ProfileScreen/ProfileDetailsScreen';
+import ProfileScreen from './screens/MainTabs/ProfileScreen/ProfileScreen';
+import SettingsScreen from './screens/MainTabs/ProfileScreen/SettingsScreen';
 // Organization Screens
 import CreateEventScreen from './screens/org/CreateEventScreen';
 import OrganizationDashboard from './screens/org/OrganizationDashboard';
@@ -200,6 +201,23 @@ function ProfileStackScreen() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen 
+    name="Profile" 
+    component={ProfileScreen} 
+    options={{ headerShown: false }}
+  />
+  
+  {/* Add these new screens */}
+  <Stack.Screen 
+    name="EditProfile" 
+    component={EditProfileScreen}
+    options={{ headerShown: false }}
+  />
+  <Stack.Screen 
+    name="ProfileDetails" 
+    component={ProfileDetailsScreen}
+    options={{ headerShown: false }}
+  />
       <Stack.Screen
         name="EventDetails"
         component={EventDetailsScreen}

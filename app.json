@@ -1,10 +1,11 @@
 {
   "expo": {
-    "name": "Younite",
-    "slug": "Younite",
+    "name": "YOUnite",
+    "slug": "YOUnite",
+    "owner": "rawan101",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Logo.jpg",
     "scheme": "younite",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -16,7 +17,8 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.rawan101.Younite"
     },
     "web": {
       "bundler": "metro",
@@ -37,6 +39,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ed1260d9-d340-47b5-b88c-9869f58fb27b"
+      }
     }
   }
 }
