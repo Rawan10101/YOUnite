@@ -687,7 +687,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#333',
+    color: '#2b2b2b',
   },
   form: {
     padding: 20,
@@ -736,12 +736,12 @@ const styles = StyleSheet.create({
   eventTypeTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#2B2B2B',
     marginBottom: 2,
   },
   eventTypeDescription: {
     fontSize: 14,
-    color: '#666',
+    color: '#2B2B2B',
   },
   radioButton: {
     width: 20,
@@ -783,7 +783,7 @@ const styles = StyleSheet.create({
   questionLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#2B2B2B',
   },
   removeQuestionButton: {
     padding: 4,
@@ -830,11 +830,11 @@ const styles = StyleSheet.create({
   approvalLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#2B2B2B',
   },
   approvalDescription: {
     fontSize: 12,
-    color: '#666',
+    color: '#2b2b2b',
     marginTop: 2,
   },
 

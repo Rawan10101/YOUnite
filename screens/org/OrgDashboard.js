@@ -253,7 +253,7 @@ export default function OrganizationDashboard({ navigation }) {
               style={styles.respondButton}
               onPress={() => navigation.navigate('RespondToReport', { report: item })}
             >
-              <Ionicons name="mail-outline" size={16} color="#4e8cff" />
+              <Ionicons name="mail-outline" size={16} color="#2B2B2B" />
               <Text style={styles.respondText}>Respond</Text>
             </TouchableOpacity>
           )}
@@ -285,7 +285,7 @@ export default function OrganizationDashboard({ navigation }) {
   if (loading && feedItems.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4e8cff" />
+        <ActivityIndicator size="large" color="#2B2B2B" />
         <Text style={styles.loadingText}>Loading feed...</Text>
       </View>
     );
@@ -300,17 +300,17 @@ export default function OrganizationDashboard({ navigation }) {
         {/* Action Icon Buttons */}
         <View style={styles.actionIcons}>
           <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: '#009688' }]}
+            style={[styles.iconButton, { backgroundColor: '#fff' }]}
             onPress={() => navigation.navigate('PostDetails')}
           >
-            <Ionicons name="add" size={24} color="#fff" />
+            <Ionicons name="add" size={26} color="#2B2B2B" />
           </TouchableOpacity>
           
           <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: '#4e8cff' }]}
+            style={[styles.iconButton, { backgroundColor: '#fff' }]}
             onPress={() => navigation.navigate('CreateEvent')}
           >
-            <Ionicons name="calendar-outline" size={24} color="#fff" />
+            <Ionicons name="calendar-outline" size={26} color="#2B2B2B" />
           </TouchableOpacity>
         </View>
       </View>
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: '#fff',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
