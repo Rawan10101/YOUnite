@@ -166,7 +166,6 @@ const handleSubmitReport = async () => {
 };
 
 
-
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
@@ -250,6 +249,10 @@ const handleSubmitReport = async () => {
           {followedOrganizations && followedOrganizations.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.orgScrollView}>
               {followedOrganizations.map((org) => {
+                console.log('Individual org data:', org);
+  console.log('Org name specifically:', org.name);
+  console.log('Org name type:', typeof org.name);
+  
                 const isSelected = mentionedOrganizations.find(mentioned => mentioned.id === org.id);
                 return (
                   <TouchableOpacity
@@ -454,7 +457,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#2B2B2B',
     backgroundColor: '#FFFFFF',
   },
   organizationOptionSelected: {

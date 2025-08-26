@@ -23,6 +23,25 @@ import { db } from '../../firebaseConfig';
 
 const { width: screenWidth } = Dimensions.get('window');
 
+// Add this helper function at the top of your file
+const sanitizeData = (data) => {
+  const cleanData = {};
+  for (const key in data) {
+    if (data[key] === undefined) {
+      // Skip undefined fields or set to null
+      continue; // or cleanData[key] = null;
+    } else if (data[key] === null || data[key] === '') {
+      cleanData[key] = null;
+    } else if (typeof data[key] === 'object' && data[key] !== null && !Array.isArray(data[key])) {
+      cleanData[key] = sanitizeData(data[key]);
+    } else {
+      cleanData[key] = data[key];
+    }
+  }
+  return cleanData;
+};
+
+
 export default function OrganizationEvents({ navigation }) {
   const { user } = useAppContext();
   const [activeTab, setActiveTab] = useState('all');
@@ -79,25 +98,26 @@ export default function OrganizationEvents({ navigation }) {
     return () => unsubscribe();
   };
 
-  const filterEvents = () => {
-    let filtered = events;
+const filterEvents = () => {
+  let filtered = events;
 
-    // Filter by status
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(event => event.status === activeTab);
-    }
+  // Filter by status
+  if (activeTab !== 'all') {
+    filtered = filtered.filter(event => event.status === activeTab);
+  }
 
-    // Filter by search query
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(event =>
-        event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        event.location?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
+  // Filter by search query - add null checks
+  if (searchQuery.trim()) {
+    filtered = filtered.filter(event =>
+      (event.title && event.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (event.category && event.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (event.location && event.location.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }
 
-    setFilteredEvents(filtered);
-  };
+  setFilteredEvents(filtered);
+};
+
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -136,6 +156,7 @@ export default function OrganizationEvents({ navigation }) {
   };
 
   const handleCreateEvent = () => {
+    console.log('Testinggg');
     navigation.navigate('CreateEvent');
   };
 
@@ -399,37 +420,31 @@ export default function OrganizationEvents({ navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View>
-            <Text style={styles.headerTitle}>My Events</Text>
-            <Text style={styles.headerSubtitle}>
-              {events.length} total events • {tabCounts.active} active
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.createButton} onPress={handleCreateEvent}>
-            <Ionicons name="add" size={24} color="#4e8cff" />
-          </TouchableOpacity>
-        </View>
+        <View style={styles.searchBarContainer}>
+          <View style={styles.searchContainer}>
+            <Ionicons name="search" size={20} color="#2B2B2B" style={styles.searchIcon} />
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search events..."
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholderTextColor="#999"
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+          <Ionicons name="close-circle" size={20} color="#666" />
+        </TouchableOpacity>
+      )}
+    </View>
+    
+    {/* Add Button beside search bar */}
+    <TouchableOpacity style={styles.addButton} onPress={handleCreateEvent}>
+      <Ionicons name="add" size={24} color="#fff" />
+    </TouchableOpacity>
+  </View>
+</View>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#666" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search events..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#999"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={20} color="#666" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
@@ -554,6 +569,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.8)',
   },
+  
   createButton: {
     width: 50,
     height: 50,
@@ -575,20 +591,30 @@ const styles = StyleSheet.create({
   },
 
   // Search
-  searchContainer: {
+    searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 25,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    marginBottom: 10,
+    gap: 12, // Space between search bar and add button
+  },
+  searchContainer: {
+    flex: 1, // Takes remaining space
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: '#333',
     marginLeft: 10,
+  },
+  searchIcon: {
+    marginRight: 8,
   },
 
   // Tabs

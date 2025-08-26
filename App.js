@@ -26,10 +26,14 @@ import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScree
 import ProfileDetailsScreen from './screens/MainTabs/ProfileScreen/ProfileDetailsScreen';
 import ProfileScreen from './screens/MainTabs/ProfileScreen/ProfileScreen';
 import SettingsScreen from './screens/MainTabs/ProfileScreen/SettingsScreen';
+import FeedOrgScreen from './screens/org/FeedOrgScreen';
+import AnalyOrgScreen from './screens/org/AnalyOrgScreen';
 // Organization Screens
 import CreateEventScreen from './screens/org/CreateEventScreen';
-import OrganizationDashboard from './screens/org/OrganizationDashboard';
-import OrganizationEvents from './screens/org/OrganizationEvents';
+import OrganizationDashboard from './screens/org/OrgDashboard';
+import OrganizationEvents from './screens/org/OrgEvents';
+import VoluntOrgScreen from './screens/org/VoluntOrgScreen';
+import CreatePostScreen from './screens/org/CreatePostScreen';
 
 // Add this import to App.js
 
@@ -117,6 +121,9 @@ function OrganizationTabs() {
           } else if (route.name === 'Profile') {
             iconName = focused ? 'business' : 'business-outline';
           }
+          else if( route.name=='Volunteer'){
+            iconName = focused ? 'people' : 'people-outline';
+          }
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -132,7 +139,9 @@ function OrganizationTabs() {
     >
       <Tab.Screen name="Dashboard" component={OrganizationDashboardStack} />
       <Tab.Screen name="Events" component={OrganizationEventsStack} />
-      <Tab.Screen name="Volunteers" component={VolunteerManagementStack} />
+     <Tab.Screen name="Volunteer" component={VoluntOrgScreen} />
+     <Tab.Screen name="Analytics" component={AnalyOrgScreen} />
+
       <Tab.Screen name="Profile" component={ProfileStackScreen} />
     </Tab.Navigator>
   );
@@ -247,6 +256,11 @@ function OrganizationDashboardStack() {
         component={CreateEventScreen}
         options={{ headerShown: false }} // The screen handles its own header
       />
+    <Stack.Screen
+        name="PostDetails"
+        component={CreatePostScreen}
+        options={{ headerShown: true, title: 'Event Details' }}
+      />
       <Stack.Screen
         name="EventDetails"
         component={EventDetailsScreen}
@@ -266,23 +280,23 @@ function OrganizationEventsStack() {
         component={EventDetailsScreen}
         options={{ headerShown: true, title: 'Event Details' }}
       />
-      {/* Uncomment when you create these screens:
+      {/* { Uncomment when you create these screens: */}
       <Stack.Screen 
         name="CreateEvent" 
         component={CreateEventScreen}
         options={{ headerShown: true, title: 'Create Event' }}
       />
-      <Stack.Screen 
+      {/* <Stack.Screen 
         name="EditEvent" 
         component={EditEventScreen}
         options={{ headerShown: true, title: 'Edit Event' }}
-      />
-      <Stack.Screen 
+      /> */}
+      {/* <Stack.Screen 
         name="EventAnalytics" 
         component={EventAnalyticsScreen}
         options={{ headerShown: true, title: 'Event Analytics' }}
-      />
-      */}
+      /> */}
+      
     </Stack.Navigator>
   );
 }

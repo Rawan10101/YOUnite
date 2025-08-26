@@ -36,6 +36,12 @@ export default function CreateEventScreen({ navigation }) {
   const [isRecurring, setIsRecurring] = useState(false);
   const [skills, setSkills] = useState('');
   
+  // NEW: Event Type Feature
+  const [eventType, setEventType] = useState('normal'); // 'normal', 'application', 'external'
+  const [applicationQuestions, setApplicationQuestions] = useState(['']);
+  const [requiresApproval, setRequiresApproval] = useState(true);
+  const [externalFormUrl, setExternalFormUrl] = useState('');
+  
   // UI state
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -51,6 +57,31 @@ export default function CreateEventScreen({ navigation }) {
     { id: 'animals', name: 'Animals', icon: 'paw', color: '#795548' },
     { id: 'food', name: 'Food Security', icon: 'restaurant', color: '#607D8B' },
     { id: 'disaster', name: 'Disaster Relief', icon: 'warning', color: '#F44336' },
+    { id: 'technology', name: 'Technology', icon: 'code-slash', color: '#673AB7' },
+  ];
+
+  const eventTypes = [
+    {
+      id: 'normal',
+      name: 'Normal Event',
+      description: 'Open registration - volunteers join instantly',
+      icon: 'people-outline',
+      color: '#4CAF50'
+    },
+    {
+      id: 'application',
+      name: 'Application Required',
+      description: 'Screen volunteers with custom questions',
+      icon: 'clipboard-outline',
+      color: '#FF9800'
+    },
+    {
+      id: 'external',
+      name: 'External Form',
+      description: 'Link to Google Forms or other external form',
+      icon: 'link-outline',
+      color: '#9C27B0'
+    }
   ];
 
   const validateForm = () => {
@@ -81,6 +112,20 @@ export default function CreateEventScreen({ navigation }) {
     if (!contactEmail.trim()) {
       Alert.alert('Error', 'Please enter a contact email');
       return false;
+    }
+    
+    // Validate event type specific fields
+    if (eventType === 'external' && !externalFormUrl.trim()) {
+      Alert.alert('Error', 'Please enter an external form URL');
+      return false;
+    }
+    
+    if (eventType === 'application') {
+      const validQuestions = applicationQuestions.filter(q => q.trim());
+      if (validQuestions.length === 0) {
+        Alert.alert('Error', 'Please add at least one application question');
+        return false;
+      }
     }
     
     // Check if date is in the future
@@ -117,6 +162,23 @@ export default function CreateEventScreen({ navigation }) {
         contactPhone: contactPhone.trim(),
         isRecurring,
         
+        // NEW: Event Type Data
+        eventType: eventType,
+        
+        // Application-specific fields
+        ...(eventType === 'application' && {
+          applicationQuestions: applicationQuestions.filter(q => q.trim()),
+          requiresApproval: requiresApproval,
+          applicants: [], // Store volunteer applications
+          approvedApplicants: [],
+          rejectedApplicants: [],
+        }),
+        
+        // External form specific fields
+        ...(eventType === 'external' && {
+          externalFormUrl: externalFormUrl.trim(),
+        }),
+        
         // Organization data
         organizationId: user.uid,
         organizationName: user.displayName || 'Organization',
@@ -126,8 +188,8 @@ export default function CreateEventScreen({ navigation }) {
         createdAt: new Date(),
         updatedAt: new Date(),
         
-        // Volunteer tracking
-        registeredVolunteers: [],
+        // Volunteer tracking (adjusted based on event type)
+        registeredVolunteers: eventType === 'normal' ? [] : undefined,
         confirmedVolunteers: [],
         completedVolunteers: [],
         
@@ -136,7 +198,7 @@ export default function CreateEventScreen({ navigation }) {
         applications: 0,
         
         // Additional fields
-        imageUrl: null, // Can be added later
+        imageUrl: null,
         tags: skills.trim().split(',').map(skill => skill.trim()).filter(skill => skill),
       };
 
@@ -155,12 +217,11 @@ export default function CreateEventScreen({ navigation }) {
         console.log('Organization events updated');
       } catch (orgError) {
         console.error('Failed to update organization events:', orgError);
-        // Continue anyway, main event was created
       }
 
       Alert.alert(
         'Success!',
-        'Your event has been created successfully and is now live for volunteers to see.',
+        `Your ${eventType === 'normal' ? 'event' : eventType === 'application' ? 'application-based event' : 'external form event'} has been created successfully!`,
         [
           {
             text: 'View Events',
@@ -171,35 +232,36 @@ export default function CreateEventScreen({ navigation }) {
           },
           {
             text: 'Create Another',
-            onPress: () => {
-              // Reset form
-              setTitle('');
-              setDescription('');
-              setLocation('');
-              setDate(new Date());
-              setTime(new Date());
-              setMaxVolunteers('');
-              setEstimatedHours('');
-              setSelectedCategory('');
-              setRequirements('');
-              setSkills('');
-              setContactPhone('');
-              setIsRecurring(false);
-            }
+            onPress: () => resetForm()
           }
         ]
       );
 
     } catch (error) {
       console.error('Error creating event:', error);
-      Alert.alert(
-        'Error',
-        'Failed to create event. Please try again.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Error', 'Failed to create event. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setLocation('');
+    setDate(new Date());
+    setTime(new Date());
+    setMaxVolunteers('');
+    setEstimatedHours('');
+    setSelectedCategory('');
+    setRequirements('');
+    setSkills('');
+    setContactPhone('');
+    setIsRecurring(false);
+    setEventType('normal');
+    setApplicationQuestions(['']);
+    setRequiresApproval(true);
+    setExternalFormUrl('');
   };
 
   const onDateChange = (event, selectedDate) => {
@@ -215,6 +277,135 @@ export default function CreateEventScreen({ navigation }) {
       setTime(selectedTime);
     }
   };
+
+  // NEW: Handle application questions
+  const addApplicationQuestion = () => {
+    setApplicationQuestions([...applicationQuestions, '']);
+  };
+
+  const updateApplicationQuestion = (index, value) => {
+    const updated = [...applicationQuestions];
+    updated[index] = value;
+    setApplicationQuestions(updated);
+  };
+
+  const removeApplicationQuestion = (index) => {
+    if (applicationQuestions.length > 1) {
+      const updated = applicationQuestions.filter((_, i) => i !== index);
+      setApplicationQuestions(updated);
+    }
+  };
+
+  const renderEventTypeSelector = () => (
+    <View style={styles.eventTypeSection}>
+      <Text style={styles.sectionTitle}>Event Type</Text>
+      <Text style={styles.sectionSubtitle}>Choose how volunteers will join your event</Text>
+      
+      {eventTypes.map((type) => (
+        <TouchableOpacity
+          key={type.id}
+          style={[
+            styles.eventTypeOption,
+            eventType === type.id && styles.eventTypeOptionSelected
+          ]}
+          onPress={() => setEventType(type.id)}
+        >
+          <View style={styles.eventTypeLeft}>
+            <View style={[styles.eventTypeIcon, { backgroundColor: type.color }]}>
+              <Ionicons name={type.icon} size={24} color="#fff" />
+            </View>
+            <View style={styles.eventTypeContent}>
+              <Text style={styles.eventTypeTitle}>{type.name}</Text>
+              <Text style={styles.eventTypeDescription}>{type.description}</Text>
+            </View>
+          </View>
+          <View style={styles.radioButton}>
+            {eventType === type.id && (
+              <View style={styles.radioButtonSelected} />
+            )}
+          </View>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderApplicationSection = () => (
+    <View style={styles.applicationSection}>
+      <Text style={styles.sectionTitle}>Application Questions</Text>
+      <Text style={styles.sectionSubtitle}>Create questions to screen volunteers</Text>
+      
+      {applicationQuestions.map((question, index) => (
+        <View key={index} style={styles.questionGroup}>
+          <View style={styles.questionHeader}>
+            <Text style={styles.questionLabel}>Question {index + 1}</Text>
+            {applicationQuestions.length > 1 && (
+              <TouchableOpacity
+                onPress={() => removeApplicationQuestion(index)}
+                style={styles.removeQuestionButton}
+              >
+                <Ionicons name="close-circle" size={20} color="#FF4757" />
+              </TouchableOpacity>
+            )}
+          </View>
+          <TextInput
+            style={styles.questionInput}
+            placeholder="Enter your screening question..."
+            value={question}
+            onChangeText={(value) => updateApplicationQuestion(index, value)}
+            multiline
+          />
+        </View>
+      ))}
+      
+      <TouchableOpacity style={styles.addQuestionButton} onPress={addApplicationQuestion}>
+        <Ionicons name="add-circle-outline" size={20} color="#4CAF50" />
+        <Text style={styles.addQuestionText}>Add Another Question</Text>
+      </TouchableOpacity>
+
+      <View style={styles.approvalToggle}>
+        <View style={styles.approvalInfo}>
+          <Text style={styles.approvalLabel}>Manual Approval Required</Text>
+          <Text style={styles.approvalDescription}>
+            Review and approve each application individually
+          </Text>
+        </View>
+        <Switch
+          value={requiresApproval}
+          onValueChange={setRequiresApproval}
+          trackColor={{ false: '#ccc', true: '#4CAF50' }}
+          thumbColor={requiresApproval ? '#fff' : '#f4f3f4'}
+        />
+      </View>
+    </View>
+  );
+
+  const renderExternalFormSection = () => (
+    <View style={styles.externalFormSection}>
+      <Text style={styles.sectionTitle}>External Form Link</Text>
+      <Text style={styles.sectionSubtitle}>
+        Provide a link to your Google Form, Typeform, or other external application form
+      </Text>
+      
+      <View style={styles.inputGroup}>
+        <Text style={styles.label}>Form URL *</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="https://docs.google.com/forms/d/..."
+          value={externalFormUrl}
+          onChangeText={setExternalFormUrl}
+          keyboardType="url"
+          autoCapitalize="none"
+        />
+      </View>
+      
+      <View style={styles.externalFormNote}>
+        <Ionicons name="information-circle" size={16} color="#FF9800" />
+        <Text style={styles.externalFormNoteText}>
+          Volunteers will be redirected to your external form. Make sure the link is accessible and working.
+        </Text>
+      </View>
+    </View>
+  );
 
   const renderCategorySelector = () => (
     <View style={styles.categorySection}>
@@ -263,6 +454,9 @@ export default function CreateEventScreen({ navigation }) {
         </View>
 
         <View style={styles.form}>
+          {/* Event Type Selector - NEW */}
+          {renderEventTypeSelector()}
+
           {/* Event Title */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Event Title *</Text>
@@ -359,6 +553,10 @@ export default function CreateEventScreen({ navigation }) {
               />
             </View>
           </View>
+
+          {/* Conditional Sections Based on Event Type */}
+          {eventType === 'application' && renderApplicationSection()}
+          {eventType === 'external' && renderExternalFormSection()}
 
           {/* Requirements */}
           <View style={styles.inputGroup}>
@@ -494,6 +692,181 @@ const styles = StyleSheet.create({
   form: {
     padding: 20,
   },
+  
+  // NEW: Event Type Styles
+  eventTypeSection: {
+    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  eventTypeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  eventTypeOptionSelected: {
+    backgroundColor: '#f0f8ff',
+  },
+  eventTypeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  eventTypeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  eventTypeContent: {
+    flex: 1,
+  },
+  eventTypeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 2,
+  },
+  eventTypeDescription: {
+    fontSize: 14,
+    color: '#666',
+  },
+  radioButton: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioButtonSelected: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#4CAF50',
+  },
+
+  // Application Section Styles
+  applicationSection: {
+    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  questionGroup: {
+    marginBottom: 16,
+  },
+  questionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  questionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  removeQuestionButton: {
+    padding: 4,
+  },
+  questionInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    backgroundColor: '#f8f9fa',
+    minHeight: 40,
+  },
+  addQuestionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderStyle: 'dashed',
+    marginBottom: 16,
+  },
+  addQuestionText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  approvalToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  approvalInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  approvalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  approvalDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+
+  // External Form Section Styles
+  externalFormSection: {
+    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  externalFormNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF8E1',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  externalFormNoteText: {
+    fontSize: 12,
+    color: '#F57C00',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 16,
+  },
+
+  // Existing styles (unchanged)
   inputGroup: {
     marginBottom: 20,
   },
@@ -521,6 +894,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     marginTop: 5,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
   },
   categorySection: {
     marginBottom: 20,
@@ -585,11 +969,6 @@ const styles = StyleSheet.create({
   sectionHeader: {
     marginTop: 10,
     marginBottom: 10,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
   },
   toggleGroup: {
     flexDirection: 'row',

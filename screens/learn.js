@@ -21,6 +21,12 @@ export default function learn(){
             </Modal>
             <statusbar></statusbar>
           <Button title="Alert" onPress={()=>Alert.alert("Invalid")}/>
+            <view>
+                <text styles={styles.container}>Got it</text>
+            </view>
+            <box>
+                <text>Box Content</text>
+            </box>
     </view>
 
 }

@@ -276,8 +276,6 @@ const menuItems = [
     </Text>
   </View>
 </Animatable.View>
-
-
       {/* Stats */}
       <View style={styles.statsSection}>
         <Text style={styles.sectionTitle}>Your Impact</Text>
