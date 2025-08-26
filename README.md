@@ -34,11 +34,9 @@ This project is built with **React Native** using the **Expo** framework.
 ## Tech Stack
 
 - **Frontend:** React Native with Expo
-- **State Management:** React Hooks / Context API (planned)
-- **Backend:** (To be decided – could be Firebase, Node.js + Express, etc.)
-- **Database:** (To be decided – could be Firebase Firestore, MongoDB, etc.)
-- **Authentication:** (Planned – possibly Firebase Auth or custom backend)
-
+- **State Management:** React Hooks / Context API
+- **Backend:** Firebase
+- **Database:** Firebase Firestore
 ---
 
 ## Installation
