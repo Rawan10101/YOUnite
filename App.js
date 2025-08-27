@@ -259,13 +259,14 @@ function OrganizationDashboardStack() {
     <Stack.Screen
         name="PostDetails"
         component={CreatePostScreen}
-        options={{ headerShown: true, title: 'Event Details' }}
+        options={{ headerShown: false, title: 'Event Details' }}
       />
       <Stack.Screen
         name="EventDetails"
         component={EventDetailsScreen}
-        options={{ headerShown: true, title: 'Event Details' }}
+        options={{ headerShown: false, title: 'Event Details' }}
       />
+      
       {/* ... other screens */}
     </Stack.Navigator>
   );

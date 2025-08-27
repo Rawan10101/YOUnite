@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#2B2B2B',
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 20,
+    paddingBottom: 8,
     paddingHorizontal: 20,
   },
   headerContent: {
@@ -602,21 +602,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 2,
     borderColor: '#E5E7EB',
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: '#2B2B2B',
     marginLeft: 10,
   },
   searchIcon: {
     marginRight: 8,
   },
-
   // Tabs
   tabContainer: {
     backgroundColor: '#fff',
