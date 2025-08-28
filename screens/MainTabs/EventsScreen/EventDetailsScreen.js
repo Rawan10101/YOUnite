@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { arrayRemove, arrayUnion, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -15,45 +15,10 @@ import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';
 import { db } from '../../../firebaseConfig';
 
-// Import local category images
-import environmentImg from '../../../assets/images/environmentCat.jpeg';
-import educationImg from '../../../assets/images/educationCat.jpeg';
-import healthcareImg from '../../../assets/images/healthcareCat.jpeg';
-
-// Local category images mapping (add more as you create the image files)
-const localCategoryImages = {
-  environment: environmentImg,
-  education: educationImg,
-  healthcare: healthcareImg,
-  // Use existing images as fallbacks for missing categories
-  community: environmentImg,
-  seniors: healthcareImg,
-  animals: environmentImg,
-  food: educationImg,
-  disaster: healthcareImg,
-  technology: educationImg,
-};
-
-// Function to get the correct image source
-const getEventImageSource = (event) => {
-  // If has custom image uploaded to Firebase
-  if (event.hasCustomImage && event.imageUrl) {
-    return { uri: event.imageUrl };
-  }
-  
-  // Use local default based on category
-  if (event.category && localCategoryImages[event.category]) {
-    return localCategoryImages[event.category];
-  }
-  
-  // Fallback to environment image
-  return environmentImg;
-};
-
 export default function EventDetailsScreen({ route, navigation }) {
-  const { event: initialEvent } = route.params;
+  const { event: initialEvent } = route.params; // Rename to initialEvent
   const { user, registeredEvents, setRegisteredEvents } = useAppContext();
-  const [event, setEvent] = useState(initialEvent);
+  const [event, setEvent] = useState(initialEvent); // Use state to hold event data
 
   // Effect to listen for real-time updates to the event document
   useEffect(() => {
@@ -81,9 +46,10 @@ export default function EventDetailsScreen({ route, navigation }) {
     });
 
     return () => unsubscribe();
-  }, [initialEvent.id, navigation]);
+  }, [initialEvent.id, navigation]); // Depend on initialEvent.id and navigation
 
-  // Derive isRegistered from the updated event state
+  // Derive isRegistered from the updated event state and registeredEvents context
+  // Prioritize the real-time data from 'event.registeredVolunteers'
   const isRegistered = event.registeredVolunteers?.includes(user?.uid);
 
   const handleRegister = async () => {
@@ -101,12 +67,13 @@ export default function EventDetailsScreen({ route, navigation }) {
           registeredVolunteers: arrayRemove(user.uid)
         });
         
+        // Update local context only if the real-time update hasn't propagated yet
         setRegisteredEvents(prev => prev.filter(e => e.id !== event.id));
         Alert.alert('Cancelled', 'Your registration has been cancelled.');
       } else {
-        // Register - Check if event is full
-        const currentRegistrations = event.registeredVolunteers?.length || 0;
-        if (currentRegistrations >= event.maxVolunteers) {
+        // Register
+        // Check if event is full before registering
+        if (event.participants >= event.maxParticipants) {
           Alert.alert('Event Full', 'This event is already at maximum capacity.');
           return;
         }
@@ -114,7 +81,9 @@ export default function EventDetailsScreen({ route, navigation }) {
         await updateDoc(eventRef, {
           registeredVolunteers: arrayUnion(user.uid)
         });
-        
+          await createEventChatRoom();
+
+        // Update local context only if the real-time update hasn't propagated yet
         setRegisteredEvents(prev => [...prev, event]);
         Alert.alert('Success', 'You have successfully registered for this event!');
       }
@@ -132,6 +101,75 @@ export default function EventDetailsScreen({ route, navigation }) {
   const handleShare = () => {
     Alert.alert('Share Event', 'Share functionality coming soon!');
   };
+const createEventChatRoom = async () => {
+  try {
+    const chatRoomId = `event_${event.id}`;
+    const chatRoomRef = doc(db, 'chatRooms', chatRoomId);
+    
+    console.log('Checking if chat room exists:', chatRoomId);
+    
+    // Check if chat room already exists
+    const chatRoomDoc = await getDoc(chatRoomRef);
+    
+    if (!chatRoomDoc.exists()) {
+      console.log('Creating new event chat room...');
+      
+      // Get current registered volunteers (including the current user)
+      const participants = event.registeredVolunteers || [];
+      if (!participants.includes(user.uid)) {
+        participants.push(user.uid);
+      }
+      
+      console.log('Participants for chat room:', participants);
+      
+      // Create new chat room for this event
+      await setDoc(chatRoomRef, {
+        id: chatRoomId,
+        name: `${event.title} - Chat`,
+        eventId: event.id,
+        eventTitle: event.title,
+        organizationId: event.organizationId,
+        participants: participants, // Include all registered volunteers
+        createdAt: new Date(),
+        lastMessage: null,
+        lastMessageTime: null,
+        isEventChat: true,
+        isActive: true
+      });
+      
+      console.log('Event chat room created successfully');
+    } else {
+      console.log('Event chat room already exists');
+    }
+  } catch (error) {
+    console.error('Error creating event chat room:', error);
+    console.error('Error details:', error.message);
+    throw error; // Re-throw to handle in calling function
+  }
+};
+
+const joinEventChat = async () => {
+  if (!isRegistered) {
+    Alert.alert('Registration Required', 'Please register for this event to join the chat.');
+    return;
+  }
+
+  try {
+    console.log('Attempting to join event chat...');
+    await createEventChatRoom();
+    
+    console.log('Navigating to chat screen...');
+    // Navigate to chat with event-specific room ID
+    navigation.navigate('Chat', {
+      chatRoomId: `event_${event.id}`,
+      chatTitle: `${event.title} - Chat`
+    });
+  } catch (error) {
+    console.error('Error joining event chat:', error);
+    Alert.alert('Error', 'Failed to join event chat. Please try again.');
+  }
+};
+
 
   const formatDate = (date) => {
     if (!date) return 'TBD';
@@ -142,134 +180,69 @@ export default function EventDetailsScreen({ route, navigation }) {
     });
   };
 
-  const formatTime = (date) => {
-    if (!date) return 'TBD';
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-  };
-
-  // Calculate progress
-  const currentRegistrations = event.registeredVolunteers?.length || 0;
-  const maxRegistrations = event.maxVolunteers || 1;
-  const progressPercentage = (currentRegistrations / maxRegistrations) * 100;
-
   return (
     <ScrollView style={styles.container}>
       <Animatable.View animation="fadeIn" duration={800}>
-        {/* Event Image with proper source handling */}
-        <Image 
-          source={getEventImageSource(event)} 
-          style={styles.eventImage}
-          onError={(error) => {
-            console.log('Image loading error:', error);
-          }}
-        />
+        <Image source={{ uri: event.image }} style={styles.eventImage} />
         
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>{event.title}</Text>
             <TouchableOpacity
               style={styles.organizationContainer}
-              onPress={() => navigation.navigate('OrganizationProfile', { organizationId: event.organizationId })}
+              onPress={() => navigation.navigate('OrganizationDetails', { organization: event.organization })}
             >
-              <View style={styles.organizationLogo}>
-                <Ionicons name="business" size={20} color="#4CAF50" />
-              </View>
-              <Text style={styles.organizationName}>
-                {event.organizationName || 'Organization'}
-              </Text>
+              <Image source={{ uri: event.organizationLogo }} style={styles.organizationLogo} />
+              <Text style={styles.organizationName}>{event.organization}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.badges}>
             <View style={[styles.badge, { backgroundColor: '#4CAF50' }]}>
-              <Text style={styles.badgeText}>
-                {event.category ? event.category.charAt(0).toUpperCase() + event.category.slice(1) : 'General'}
-              </Text>
+              <Text style={styles.badgeText}>{event.category}</Text>
             </View>
-            <View style={[styles.badge, { backgroundColor: '#2196F3' }]}>
-              <Text style={styles.badgeText}>
-                {event.estimatedHours ? `${event.estimatedHours}h` : 'Duration TBD'}
-              </Text>
-            </View>
+           
           </View>
 
-          <Text style={styles.description}>
-            {event.description || 'No description available.'}
-          </Text>
+          <Text style={styles.description}>{event.description}</Text>
 
           <View style={styles.detailsSection}>
             <Text style={styles.sectionTitle}>Event Details</Text>
             
             <View style={styles.detailRow}>
               <Ionicons name="calendar-outline" size={20} color="#4e8cff" />
-              <Text style={styles.detailText}>
-                {formatDate(event.date)} at {formatTime(event.date)}
-              </Text>
+              <Text style={styles.detailText}>{formatDate(event.date)} at {event.time}</Text>
             </View>
             
             <TouchableOpacity style={styles.detailRow} onPress={handleGetDirections}>
               <Ionicons name="location-outline" size={20} color="#4e8cff" />
-              <Text style={[styles.detailText, styles.linkText]}>
-                {event.location || 'Location TBD'}
-              </Text>
+              <Text style={[styles.detailText, styles.linkText]}>{event.location}</Text>
             </TouchableOpacity>
             
             <View style={styles.detailRow}>
               <Ionicons name="time-outline" size={20} color="#4e8cff" />
-              <Text style={styles.detailText}>
-                Duration: {event.estimatedHours ? `${event.estimatedHours} hours` : 'TBD'}
-              </Text>
+              <Text style={styles.detailText}>Duration: {event.duration}</Text>
             </View>
             
             <View style={styles.detailRow}>
               <Ionicons name="people-outline" size={20} color="#4e8cff" />
               <Text style={styles.detailText}>
-                {currentRegistrations}/{maxRegistrations} volunteers registered
+                {event.participants}/{event.maxParticipants} participants
               </Text>
             </View>
-
-            {event.contactEmail ? (
-              <View style={styles.detailRow}>
-                <Ionicons name="mail-outline" size={20} color="#4e8cff" />
-                <Text style={styles.detailText}>{event.contactEmail}</Text>
-              </View>
-            ) : null}
-
-            {event.contactPhone ? (
-              <View style={styles.detailRow}>
-                <Ionicons name="call-outline" size={20} color="#4e8cff" />
-                <Text style={styles.detailText}>{event.contactPhone}</Text>
-              </View>
-            ) : null}
           </View>
 
-{event.requirements && typeof event.requirements === 'string' && event.requirements.trim() ? (
-  <View style={styles.requirementsSection}>
-    <Text style={styles.sectionTitle}>Requirements</Text>
-    <View style={styles.requirementItem}>
-      <Ionicons name="information-circle-outline" size={16} color="#FF9800" />
-      <Text style={styles.requirementText}>{event.requirements}</Text>
-    </View>
-  </View>
-) : null}
-
-
-          {event.skills && event.skills.length > 0 ? (
-            <View style={styles.skillsSection}>
-              <Text style={styles.sectionTitle}>Skills Needed</Text>
-              <View style={styles.skillsContainer}>
-                {event.skills.map((skill, index) => (
-                  <View key={index} style={styles.skillBadge}>
-                    <Text style={styles.skillText}>{skill}</Text>
-                  </View>
-                ))}
-              </View>
+          {Array.isArray(event.requirements) && event.requirements.length > 0 && (
+            <View style={styles.requirementsSection}>
+              <Text style={styles.sectionTitle}>Requirements</Text>
+              {event.requirements.map((requirement, index) => (
+                <View key={index} style={styles.requirementItem}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color="#4CAF50" />
+                  <Text style={styles.requirementText}>{requirement}</Text>
+                </View>
+              ))}
             </View>
-          ) : null}
+          )}
 
           <View style={styles.progressSection}>
             <Text style={styles.sectionTitle}>Registration Progress</Text>
@@ -278,12 +251,12 @@ export default function EventDetailsScreen({ route, navigation }) {
                 <View
                   style={[
                     styles.progressFill,
-                    { width: `${Math.min(progressPercentage, 100)}%` },
+                    { width: `${(event.participants / event.maxParticipants) * 100}%` },
                   ]}
                 />
               </View>
               <Text style={styles.progressText}>
-                {Math.round(progressPercentage)}% full
+                {Math.round((event.participants / event.maxParticipants) * 100)}% full
               </Text>
             </View>
           </View>
@@ -294,26 +267,31 @@ export default function EventDetailsScreen({ route, navigation }) {
         <TouchableOpacity
           style={[styles.registerButton, isRegistered && styles.registeredButton]}
           onPress={handleRegister}
-          disabled={!isRegistered && currentRegistrations >= maxRegistrations}
         >
           <Ionicons
-            name={isRegistered ? "checkmark" : currentRegistrations >= maxRegistrations ? "close" : "add"}
+            name={isRegistered ? "checkmark" : "add"}
             size={20}
-            color={isRegistered ? "#4e8cff" : currentRegistrations >= maxRegistrations ? "#999" : "#fff"}
+            color={isRegistered ? "#4e8cff" : "#fff"}
           />
           <Text
             style={[
               styles.registerButtonText,
               isRegistered && styles.registeredButtonText,
-              currentRegistrations >= maxRegistrations && styles.disabledButtonText
             ]}
           >
-            {isRegistered ? 'Registered' : 
-             currentRegistrations >= maxRegistrations ? 'Event Full' : 
-             'Register for Event'}
+            {isRegistered ? 'Registered' : 'Register for Event'}
           </Text>
         </TouchableOpacity>
 
+{isRegistered && (
+  <TouchableOpacity 
+    style={styles.chatButton}
+    onPress={joinEventChat}
+  >
+    <Ionicons name="chatbubbles" size={20} color="#2B2B2B" />
+    <Text style={styles.chatButtonText}>Event Chat</Text>
+  </TouchableOpacity>
+)}
         <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
           <Ionicons name="share-outline" size={20} color="#4e8cff" />
         </TouchableOpacity>
@@ -322,6 +300,7 @@ export default function EventDetailsScreen({ route, navigation }) {
   );
 }
 
+// Add all the missing styles here:
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -330,7 +309,6 @@ const styles = StyleSheet.create({
   eventImage: {
     width: '100%',
     height: 250,
-    backgroundColor: '#f0f0f0',
   },
   content: {
     padding: 20,
@@ -352,9 +330,6 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: 10,
   },
   organizationName: {
@@ -365,14 +340,12 @@ const styles = StyleSheet.create({
   badges: {
     flexDirection: 'row',
     marginBottom: 15,
-    flexWrap: 'wrap',
   },
   badge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 15,
     marginRight: 10,
-    marginBottom: 5,
   },
   badgeText: {
     color: '#fff',
@@ -388,6 +361,24 @@ const styles = StyleSheet.create({
   detailsSection: {
     marginBottom: 20,
   },
+  chatButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#f0f0f0',
+  paddingHorizontal: 20,
+  paddingVertical: 12,
+  borderRadius: 25,
+  borderWidth: 1,
+  borderColor: '#2B2B2B',
+  marginLeft: 10,
+},
+chatButtonText: {
+  color: '#2B2B2B',
+  fontSize: 16,
+  fontWeight: '600',
+  marginLeft: 8,
+},
+
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -397,7 +388,7 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   detailText: {
     fontSize: 16,
@@ -406,7 +397,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   linkText: {
-    color: '#4e8cff',
+    color: '#2B2B2B',
     textDecorationLine: 'underline',
   },
   requirementsSection: {
@@ -414,7 +405,7 @@ const styles = StyleSheet.create({
   },
   requirementItem: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 8,
   },
   requirementText: {
@@ -422,27 +413,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginLeft: 8,
     flex: 1,
-    lineHeight: 20,
-  },
-  skillsSection: {
-    marginBottom: 20,
-  },
-  skillsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  skillBadge: {
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  skillText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
   },
   progressSection: {
     marginBottom: 20,
@@ -457,17 +427,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     borderRadius: 4,
     marginRight: 12,
-    overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#2B2B2B',
     borderRadius: 4,
   },
   progressText: {
     fontSize: 14,
     color: '#666',
-    fontWeight: '500',
   },
   actionButtons: {
     flexDirection: 'row',
@@ -480,7 +448,7 @@ const styles = StyleSheet.create({
   registerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#2B2B2B',
     paddingHorizontal: 25,
     paddingVertical: 12,
     borderRadius: 25,
@@ -500,17 +468,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   registeredButtonText: {
-    color: '#4e8cff',
-  },
-  disabledButtonText: {
-    color: '#999',
+    color: '#2B2B2B',
   },
   shareButton: {
     padding: 12,
     borderRadius: 25,
     borderWidth: 1,
-    borderColor: '#4e8cff',
+    borderColor: '#2B2B2B',
     justifyContent: 'center',
     alignItems: 'center',
   },
 });
+

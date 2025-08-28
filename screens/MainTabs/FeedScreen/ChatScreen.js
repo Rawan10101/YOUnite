@@ -1,17 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { useEffect, useState, useRef } from 'react';
+import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Image
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';

@@ -26,14 +26,13 @@ import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScree
 import ProfileDetailsScreen from './screens/MainTabs/ProfileScreen/ProfileDetailsScreen';
 import ProfileScreen from './screens/MainTabs/ProfileScreen/ProfileScreen';
 import SettingsScreen from './screens/MainTabs/ProfileScreen/SettingsScreen';
-import FeedOrgScreen from './screens/org/FeedOrgScreen';
 import AnalyOrgScreen from './screens/org/AnalyOrgScreen';
 // Organization Screens
 import CreateEventScreen from './screens/org/CreateEventScreen';
+import CreatePostScreen from './screens/org/CreatePostScreen';
 import OrganizationDashboard from './screens/org/OrgDashboard';
 import OrganizationEvents from './screens/org/OrgEvents';
 import VoluntOrgScreen from './screens/org/VoluntOrgScreen';
-import CreatePostScreen from './screens/org/CreatePostScreen';
 
 // Add this import to App.js
 
@@ -297,6 +296,12 @@ function OrganizationEventsStack() {
         component={EventAnalyticsScreen}
         options={{ headerShown: true, title: 'Event Analytics' }}
       /> */}
+
+       <Stack.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={{ headerShown: false }}
+      />
       
     </Stack.Navigator>
   );
