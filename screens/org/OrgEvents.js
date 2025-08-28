@@ -1,4 +1,3 @@
-// screens/Organization/OrganizationEvents.js
 import { Ionicons } from '@expo/vector-icons';
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
@@ -21,15 +20,48 @@ import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../contexts/AppContext';
 import { db } from '../../firebaseConfig';
 
+// Import all local category images
+import environmentImg from '../../assets/images/environmentCat.jpeg';
+import educationImg from '../../assets/images/educationCat.jpeg';
+import healthcareImg from '../../assets/images/healthcareCat.jpeg';
+// import communityImg from '../../assets/images/communityCat.jpeg';
+
 const { width: screenWidth } = Dimensions.get('window');
 
-// Add this helper function at the top of your file
+// Local category images mapping
+const localCategoryImages = {
+  environment: environmentImg,
+  education: educationImg,
+  healthcare: healthcareImg,
+  // community: communityImg,
+  // seniors: seniorsImg,
+  // animals: animalsImg,
+  // food: foodImg,
+  // disaster: disasterImg,
+  // technology: technologyImg,
+};
+
+// Function to get the correct image source based on event data
+const getImageSource = (event) => {
+  // If has custom image uploaded to Firebase
+  if (event.hasCustomImage && event.imageUrl) {
+    return { uri: event.imageUrl };
+  }
+  
+  // Use local default based on category
+  if (event.category && localCategoryImages[event.category]) {
+    return localCategoryImages[event.category];
+  }
+  
+  // Fallback to a default local image
+  return localCategoryImages.community;
+};
+
 const sanitizeData = (data) => {
   const cleanData = {};
   for (const key in data) {
     if (data[key] === undefined) {
-      // Skip undefined fields or set to null
-      continue; // or cleanData[key] = null;
+      continue;
     } else if (data[key] === null || data[key] === '') {
       cleanData[key] = null;
     } else if (typeof data[key] === 'object' && data[key] !== null && !Array.isArray(data[key])) {
@@ -40,7 +72,6 @@ const sanitizeData = (data) => {
   }
   return cleanData;
 };
-
 
 export default function OrganizationEvents({ navigation }) {
   const { user } = useAppContext();
@@ -98,30 +129,28 @@ export default function OrganizationEvents({ navigation }) {
     return () => unsubscribe();
   };
 
-const filterEvents = () => {
-  let filtered = events;
+  const filterEvents = () => {
+    let filtered = events;
 
-  // Filter by status
-  if (activeTab !== 'all') {
-    filtered = filtered.filter(event => event.status === activeTab);
-  }
+    // Filter by status
+    if (activeTab !== 'all') {
+      filtered = filtered.filter(event => event.status === activeTab);
+    }
 
-  // Filter by search query - add null checks
-  if (searchQuery.trim()) {
-    filtered = filtered.filter(event =>
-      (event.title && event.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (event.category && event.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (event.location && event.location.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  }
+    // Filter by search query - add null checks
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(event =>
+        (event.title && event.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (event.category && event.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (event.location && event.location.toLowerCase().includes(searchQuery.toLowerCase()))
+      );
+    }
 
-  setFilteredEvents(filtered);
-};
-
+    setFilteredEvents(filtered);
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    // The real-time listener will automatically update the data
     setTimeout(() => setRefreshing(false), 1000);
   };
 
@@ -147,7 +176,7 @@ const filterEvents = () => {
 
   const getEventProgress = (event) => {
     const registered = event.registeredVolunteers?.length || 0;
-    const max = event.maxParticipants || 1;
+    const max = event.maxVolunteers || 1;
     return (registered / max) * 100;
   };
 
@@ -156,7 +185,7 @@ const filterEvents = () => {
   };
 
   const handleCreateEvent = () => {
-    console.log('Testinggg');
+    console.log('Navigate to CreateEvent');
     navigation.navigate('CreateEvent');
   };
 
@@ -242,8 +271,15 @@ const filterEvents = () => {
           {/* Event Image with Overlay */}
           <View style={styles.eventImageContainer}>
             <Image 
-              source={{ uri: item.image || 'https://via.placeholder.com/300x150' }} 
-              style={styles.eventImage} 
+              source={getImageSource(item)} 
+              style={styles.eventImage}
+              resizeMode="cover"
+              onLoad={() => {
+                console.log('✅ Image loaded for:', item.title);
+              }}
+              onError={(error) => {
+                console.log('❌ Image error for:', item.title);
+              }}
             />
             <View style={styles.eventImageOverlay} />
             
@@ -253,32 +289,35 @@ const filterEvents = () => {
             </View>
 
             {/* Urgency Indicator */}
-            {isUpcoming && daysUntil <= 7 && (
+            {isUpcoming && daysUntil <= 7 ? (
               <View style={styles.urgencyBadge}>
                 <Ionicons name="time" size={12} color="#fff" />
                 <Text style={styles.urgencyText}>
                   {daysUntil === 1 ? 'Tomorrow' : `${daysUntil} days`}
                 </Text>
               </View>
-            )}
+            ) : null}
 
-            {isToday && (
+            {isToday ? (
               <View style={[styles.urgencyBadge, { backgroundColor: '#FF6B35' }]}>
                 <Ionicons name="flash" size={12} color="#fff" />
                 <Text style={styles.urgencyText}>Today</Text>
               </View>
-            )}
+            ) : null}
           </View>
           
           <View style={styles.eventContent}>
-            {/* <View style={styles.eventHeader}>
+            {/* Event Header with Title */}
+            <View style={styles.eventHeader}>
               <Text style={styles.eventTitle} numberOfLines={2}>
                 {item.title}
               </Text>
               <View style={styles.categoryBadge}>
-                <Text style={styles.categoryText}>{item.category}</Text>
+                <Text style={styles.categoryText}>
+                  {item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : 'General'}
+                </Text>
               </View>
-            </View> */}
+            </View>
 
             {/* Event Details */}
             <View style={styles.eventDetails}>
@@ -299,7 +338,7 @@ const filterEvents = () => {
               <View style={styles.eventDetailRow}>
                 <Ionicons name="people-outline" size={16} color="#666" />
                 <Text style={styles.eventDetailText}>
-                  {item.registeredVolunteers?.length || 0}/{item.maxParticipants || 0} volunteers
+                  {item.registeredVolunteers?.length || 0}/{item.maxVolunteers || 0} volunteers
                 </Text>
               </View>
             </View>
@@ -375,13 +414,13 @@ const filterEvents = () => {
       <Text style={[styles.tabButtonText, activeTab === tab && styles.activeTabButtonText]}>
         {label}
       </Text>
-      {count > 0 && (
+      {count > 0 ? (
         <View style={[styles.tabBadge, activeTab === tab && styles.activeTabBadge]}>
           <Text style={[styles.tabBadgeText, activeTab === tab && styles.activeTabBadgeText]}>
             {count}
           </Text>
         </View>
-      )}
+      ) : null}
     </TouchableOpacity>
   );
 
@@ -424,27 +463,26 @@ const filterEvents = () => {
         <View style={styles.searchBarContainer}>
           <View style={styles.searchContainer}>
             <Ionicons name="search" size={20} color="#2B2B2B" style={styles.searchIcon} />
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search events..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholderTextColor="#999"
-      />
-      {searchQuery.length > 0 && (
-        <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-          <Ionicons name="close-circle" size={20} color="#666" />
-        </TouchableOpacity>
-      )}
-    </View>
-    
-    {/* Add Button beside search bar */}
-    <TouchableOpacity style={styles.addButton} onPress={handleCreateEvent}>
-      <Ionicons name="add" size={24} color="#fff" />
-    </TouchableOpacity>
-  </View>
-</View>
-
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search events..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#999"
+            />
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+                <Ionicons name="close-circle" size={20} color="#666" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          
+          {/* Add Button beside search bar */}
+          <TouchableOpacity style={styles.addButton} onPress={handleCreateEvent}>
+            <Ionicons name="add" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
@@ -484,11 +522,11 @@ const filterEvents = () => {
                   : `No ${activeTab} events at the moment`
               }
             </Text>
-            {!searchQuery && activeTab === 'all' && (
+            {!searchQuery && activeTab === 'all' ? (
               <TouchableOpacity style={styles.emptyButton} onPress={handleCreateEvent}>
                 <Text style={styles.emptyButtonText}>Create Event</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
         }
       />
@@ -512,7 +550,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
+    color: '#2B2B2B',
   },
   errorContainer: {
     flex: 1,
@@ -553,51 +591,13 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     paddingHorizontal: 20,
   },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  
-  createButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-
-  // Search
-    searchBarContainer: {
+  searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12, // Space between search bar and add button
+    gap: 12,
   },
   searchContainer: {
-    flex: 1, // Takes remaining space
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
@@ -616,6 +616,15 @@ const styles = StyleSheet.create({
   searchIcon: {
     marginRight: 8,
   },
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
   // Tabs
   tabContainer: {
     backgroundColor: '#fff',
@@ -879,4 +888,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

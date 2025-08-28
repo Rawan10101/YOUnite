@@ -1,4 +1,3 @@
-// screens/Organization/CreateEventScreen.js
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import {
@@ -12,11 +11,29 @@ import {
   TouchableOpacity,
   View,
   Switch,
+  Image,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { collection, addDoc, doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
+import { db, storage } from '../../firebaseConfig';
+import * as ImagePicker from 'expo-image-picker';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+// Import local category images
+import environmentImg from '../../assets/images/environmentCat.jpeg';
+import educationImg from '../../assets/images/educationCat.jpeg';
+import healthcareImg from '../../assets/images/healthcareCat.jpeg';
+// import communityImg from '../../assets/images/communityCat.jpeg';
+
+// Local category images mapping
+const localCategoryImages = {
+  environment: environmentImg,
+  education: educationImg,
+  healthcare: healthcareImg,
+  // community: communityImg,
+
+};
 
 export default function CreateEventScreen({ navigation }) {
   const { user } = useAppContext();
@@ -36,8 +53,8 @@ export default function CreateEventScreen({ navigation }) {
   const [isRecurring, setIsRecurring] = useState(false);
   const [skills, setSkills] = useState('');
   
-  // NEW: Event Type Feature
-  const [eventType, setEventType] = useState('normal'); // 'normal', 'application', 'external'
+  // Event Type Feature
+  const [eventType, setEventType] = useState('normal');
   const [applicationQuestions, setApplicationQuestions] = useState(['']);
   const [requiresApproval, setRequiresApproval] = useState(true);
   const [externalFormUrl, setExternalFormUrl] = useState('');
@@ -47,6 +64,10 @@ export default function CreateEventScreen({ navigation }) {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('');
+  
+  // Image Handling
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
   const categories = [
     { id: 'environment', name: 'Environment', icon: 'leaf', color: '#4CAF50' },
@@ -83,6 +104,65 @@ export default function CreateEventScreen({ navigation }) {
       color: '#9C27B0'
     }
   ];
+
+  // Image selection function
+  const selectImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant photo library permissions to upload an image.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.7,
+      });
+
+      if (!result.canceled) {
+        setSelectedImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error selecting image:', error);
+      Alert.alert('Error', 'Failed to select image. Please try again.');
+    }
+  };
+
+  // Upload image to Firebase Storage
+  const uploadImageToFirebase = async (imageUri) => {
+    try {
+      setImageLoading(true);
+      
+      // Convert image to blob
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      
+      // Create unique filename
+      const filename = `event-images/${user.uid}/${Date.now()}.jpg`;
+      
+      // Create storage reference
+      const imageRef = ref(storage, filename);
+      
+      // Upload the blob
+      const snapshot = await uploadBytes(imageRef, blob);
+      
+      // Get download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      
+      console.log('Image uploaded successfully:', downloadURL);
+      return downloadURL;
+      
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      Alert.alert('Error', 'Failed to upload image. Please try again.');
+      throw error;
+    } finally {
+      setImageLoading(false);
+    }
+  };
 
   const validateForm = () => {
     if (!title.trim()) {
@@ -139,6 +219,7 @@ export default function CreateEventScreen({ navigation }) {
     return true;
   };
 
+  // Handle event creation with proper image logic
   const handleCreateEvent = async () => {
     if (!validateForm()) return;
 
@@ -147,6 +228,36 @@ export default function CreateEventScreen({ navigation }) {
       // Combine date and time
       const eventDateTime = new Date(date);
       eventDateTime.setHours(time.getHours(), time.getMinutes());
+
+      // Handle image logic
+      let imageUrl = null;
+      let hasCustomImage = false;
+      let useLocalDefault = true;
+      
+      if (selectedImage) {
+        try {
+          // Upload custom image to Firebase Storage
+          imageUrl = await uploadImageToFirebase(selectedImage);
+          hasCustomImage = true;
+          useLocalDefault = false;
+          console.log('Custom image uploaded:', imageUrl);
+        } catch (uploadError) {
+          console.error('Image upload failed:', uploadError);
+          // If upload fails, fall back to local default
+          hasCustomImage = false;
+          useLocalDefault = true;
+          Alert.alert(
+            'Image Upload Failed', 
+            'Your event will be created with a default category image.',
+            [{ text: 'Continue', style: 'default' }]
+          );
+        }
+      } else {
+        // No custom image selected - use local default
+        hasCustomImage = false;
+        useLocalDefault = true;
+        imageUrl = null; // Don't store anything in Firebase for local images
+      }
 
       const eventData = {
         title: title.trim(),
@@ -162,14 +273,14 @@ export default function CreateEventScreen({ navigation }) {
         contactPhone: contactPhone.trim(),
         isRecurring,
         
-        // NEW: Event Type Data
+        // Event Type Data
         eventType: eventType,
         
         // Application-specific fields
         ...(eventType === 'application' && {
           applicationQuestions: applicationQuestions.filter(q => q.trim()),
           requiresApproval: requiresApproval,
-          applicants: [], // Store volunteer applications
+          applicants: [],
           approvedApplicants: [],
           rejectedApplicants: [],
         }),
@@ -188,7 +299,7 @@ export default function CreateEventScreen({ navigation }) {
         createdAt: new Date(),
         updatedAt: new Date(),
         
-        // Volunteer tracking (adjusted based on event type)
+        // Volunteer tracking
         registeredVolunteers: eventType === 'normal' ? [] : undefined,
         confirmedVolunteers: [],
         completedVolunteers: [],
@@ -197,8 +308,10 @@ export default function CreateEventScreen({ navigation }) {
         views: 0,
         applications: 0,
         
-        // Additional fields
-        imageUrl: null,
+        // Image data - UPDATED LOGIC
+        imageUrl: hasCustomImage ? imageUrl : null, // Only store Firebase URL if custom
+        hasCustomImage: hasCustomImage,
+        useLocalDefault: useLocalDefault, // Flag to use local image
         tags: skills.trim().split(',').map(skill => skill.trim()).filter(skill => skill),
       };
 
@@ -221,7 +334,7 @@ export default function CreateEventScreen({ navigation }) {
 
       Alert.alert(
         'Success!',
-        `Your ${eventType === 'normal' ? 'event' : eventType === 'application' ? 'application-based event' : 'external form event'} has been created successfully!`,
+        `Your event has been created successfully!`,
         [
           {
             text: 'View Events',
@@ -262,6 +375,7 @@ export default function CreateEventScreen({ navigation }) {
     setApplicationQuestions(['']);
     setRequiresApproval(true);
     setExternalFormUrl('');
+    setSelectedImage(null);
   };
 
   const onDateChange = (event, selectedDate) => {
@@ -278,7 +392,7 @@ export default function CreateEventScreen({ navigation }) {
     }
   };
 
-  // NEW: Handle application questions
+  // Application questions functions
   const addApplicationQuestion = () => {
     setApplicationQuestions([...applicationQuestions, '']);
   };
@@ -320,9 +434,9 @@ export default function CreateEventScreen({ navigation }) {
             </View>
           </View>
           <View style={styles.radioButton}>
-            {eventType === type.id && (
+            {eventType === type.id ? (
               <View style={styles.radioButtonSelected} />
-            )}
+            ) : null}
           </View>
         </TouchableOpacity>
       ))}
@@ -338,14 +452,14 @@ export default function CreateEventScreen({ navigation }) {
         <View key={index} style={styles.questionGroup}>
           <View style={styles.questionHeader}>
             <Text style={styles.questionLabel}>Question {index + 1}</Text>
-            {applicationQuestions.length > 1 && (
+            {applicationQuestions.length > 1 ? (
               <TouchableOpacity
                 onPress={() => removeApplicationQuestion(index)}
                 style={styles.removeQuestionButton}
               >
                 <Ionicons name="close-circle" size={20} color="#FF4757" />
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
           <TextInput
             style={styles.questionInput}
@@ -438,6 +552,63 @@ export default function CreateEventScreen({ navigation }) {
     </View>
   );
 
+  // Image upload render function
+  const renderImageUpload = () => (
+    <View style={styles.imageSection}>
+      <Text style={styles.label}>Event Image</Text>
+      <Text style={styles.imageSubtitle}>
+        {selectedImage 
+          ? "Custom image selected - will be uploaded to Firebase" 
+          : `Default ${categories.find(c => c.id === selectedCategory)?.name || 'category'} image will be used`
+        }
+      </Text>
+      
+      {(selectedImage || selectedCategory) ? (
+        <View style={styles.imagePreview}>
+          <Image 
+            source={
+              selectedImage 
+                ? { uri: selectedImage }
+                : (selectedCategory ? localCategoryImages[selectedCategory] : null) ||
+                  { uri: 'https://picsum.photos/300/150' }
+            } 
+            style={styles.previewImage}
+            resizeMode="cover"
+          />
+          {selectedImage ? (
+            <TouchableOpacity 
+              style={styles.removeImageButton}
+              onPress={() => setSelectedImage(null)}
+              disabled={imageLoading}
+            >
+              <Ionicons name="close-circle" size={24} color="#FF4757" />
+            </TouchableOpacity>
+          ) : null}
+          {imageLoading ? (
+            <View style={styles.imageLoadingOverlay}>
+              <Text style={styles.imageLoadingText}>Uploading...</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      
+      <TouchableOpacity 
+        style={[styles.imageUploadButton, imageLoading && styles.imageUploadButtonDisabled]} 
+        onPress={selectImage}
+        disabled={imageLoading}
+      >
+        <Ionicons 
+          name={imageLoading ? "cloud-upload" : "cloud-upload-outline"} 
+          size={20} 
+          color={imageLoading ? "#ccc" : "#4CAF50"} 
+        />
+        <Text style={[styles.imageUploadText, imageLoading && styles.imageUploadTextDisabled]}>
+          {imageLoading ? 'Processing...' : selectedImage ? 'Change Image' : 'Upload Custom Image'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView 
       style={styles.container}
@@ -454,7 +625,7 @@ export default function CreateEventScreen({ navigation }) {
         </View>
 
         <View style={styles.form}>
-          {/* Event Type Selector - NEW */}
+          {/* Event Type Selector */}
           {renderEventTypeSelector()}
 
           {/* Event Title */}
@@ -486,6 +657,9 @@ export default function CreateEventScreen({ navigation }) {
 
           {/* Category Selector */}
           {renderCategorySelector()}
+
+          {/* Image Upload Section */}
+          {renderImageUpload()}
 
           {/* Location */}
           <View style={styles.inputGroup}>
@@ -555,8 +729,8 @@ export default function CreateEventScreen({ navigation }) {
           </View>
 
           {/* Conditional Sections Based on Event Type */}
-          {eventType === 'application' && renderApplicationSection()}
-          {eventType === 'external' && renderExternalFormSection()}
+          {eventType === 'application' ? renderApplicationSection() : null}
+          {eventType === 'external' ? renderExternalFormSection() : null}
 
           {/* Requirements */}
           <View style={styles.inputGroup}>
@@ -635,14 +809,14 @@ export default function CreateEventScreen({ navigation }) {
             <Text style={styles.createButtonText}>
               {loading ? 'Creating Event...' : 'Create Event'}
             </Text>
-            {!loading && <Ionicons name="checkmark-circle" size={20} color="#fff" />}
+            {!loading ? <Ionicons name="checkmark-circle" size={20} color="#fff" /> : null}
           </TouchableOpacity>
 
           <View style={styles.bottomPadding} />
         </View>
 
         {/* Date/Time Pickers */}
-        {showDatePicker && (
+        {showDatePicker ? (
           <DateTimePicker
             value={date}
             mode="date"
@@ -650,16 +824,16 @@ export default function CreateEventScreen({ navigation }) {
             onChange={onDateChange}
             minimumDate={new Date()}
           />
-        )}
+        ) : null}
 
-        {showTimePicker && (
+        {showTimePicker ? (
           <DateTimePicker
             value={time}
             mode="time"
             display="default"
             onChange={onTimeChange}
           />
-        )}
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -693,7 +867,75 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   
-  // NEW: Event Type Styles
+  // Image Section Styles
+  imageSection: {
+    marginBottom: 20,
+  },
+  imageSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+  },
+  imagePreview: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  previewImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+    padding: 4,
+  },
+  imageUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderStyle: 'dashed',
+    backgroundColor: '#f8fff8',
+  },
+  imageUploadText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  imageLoadingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  imageUploadButtonDisabled: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#ccc',
+  },
+  imageUploadTextDisabled: {
+    color: '#ccc',
+  },
+
+  // Event Type Styles
   eventTypeSection: {
     marginBottom: 24,
     backgroundColor: '#fff',
@@ -866,7 +1108,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // Existing styles (unchanged)
+  // Form Styles
   inputGroup: {
     marginBottom: 20,
   },
