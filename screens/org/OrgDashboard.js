@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { collection, doc, getDoc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -40,55 +40,9 @@ export default function OrganizationDashboard({ navigation }) {
     fetchOrganizationData();
   }, [user?.uid]);
 
-  // Setup real-time listeners for posts and reports
+  // Setup real-time listener for REPORTS ONLY
   useEffect(() => {
     if (!user?.uid) return;
-
-    let posts = [];
-    let reports = [];
-
-    const updateFeed = () => {
-      // Combine posts and reports with proper type identification
-      const combined = [
-        ...posts.map(post => ({
-          ...post,
-          sourceType: 'post',
-          sortTime: post.createdAt?.seconds || 0
-        })),
-        ...reports.map(report => ({
-          ...report,
-          sourceType: 'report',
-          sortTime: report.createdAt?.seconds || 0
-        }))
-      ].sort((a, b) => b.sortTime - a.sortTime);
-
-      console.log('Combined feed items:', combined.length, 'posts:', posts.length, 'reports:', reports.length);
-      setFeedItems(combined);
-      setLoading(false);
-    };
-
-    // Listen to organization's posts
-    console.log('Setting up posts listener for organization:', user.uid);
-    const unsubscribePosts = onSnapshot(
-      query(
-        collection(db, 'posts'),
-        where('authorId', '==', user.uid),
-        orderBy('createdAt', 'desc')
-      ),
-      (snapshot) => {
-        console.log('Posts snapshot received:', snapshot.docs.length, 'documents');
-        posts = snapshot.docs.map(doc => {
-          const data = { id: doc.id, ...doc.data() };
-          console.log('Post data:', data);
-          return data;
-        });
-        updateFeed();
-      },
-      (error) => {
-        console.error('Posts listener error:', error);
-        setLoading(false);
-      }
-    );
 
     // Listen to reports mentioning this organization
     console.log('Setting up reports listener for organization:', user.uid);
@@ -100,9 +54,14 @@ export default function OrganizationDashboard({ navigation }) {
       (snapshot) => {
         console.log('Reports snapshot received:', snapshot.docs.length, 'total documents');
         
-        // Filter reports that mention this organization
+        // Filter reports that mention this organization and add sourceType
         const filteredReports = snapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .map(doc => ({ 
+            id: doc.id, 
+            ...doc.data(),
+            sourceType: 'report', // Add this to maintain consistency with your existing design
+            sortTime: doc.data().createdAt?.seconds || 0
+          }))
           .filter(report => {
             // Check if this organization is mentioned in the report
             const isMentioned = report.mentionedOrganizations?.some(org => {
@@ -122,8 +81,8 @@ export default function OrganizationDashboard({ navigation }) {
           });
 
         console.log('Filtered reports for this org:', filteredReports.length);
-        reports = filteredReports;
-        updateFeed();
+        setFeedItems(filteredReports); // Set only reports
+        setLoading(false);
       },
       (error) => {
         console.error('Reports listener error:', error);
@@ -133,14 +92,13 @@ export default function OrganizationDashboard({ navigation }) {
 
     return () => {
       console.log('Cleaning up dashboard listeners');
-      unsubscribePosts();
       unsubscribeReports();
     };
   }, [user?.uid]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    // Real-time listeners will automatically update the data
+    // Real-time listener will automatically update the data
     setTimeout(() => setRefreshing(false), 1000);
   };
 
@@ -162,28 +120,23 @@ export default function OrganizationDashboard({ navigation }) {
   };
 
   const renderFeedItem = ({ item }) => {
-    const isPost = item.sourceType === 'post';
+    // Since we only have reports now, we can simplify this
     const isReport = item.sourceType === 'report';
 
     return (
       <View style={styles.feedCard}>
-        {/* Post/Report Header */}
+        {/* Report Header */}
         <View style={styles.feedHeader}>
           <View style={styles.authorInfo}>
             <Image
               source={{
-                uri: isReport
-                  ? item.reporterAvatar || 'https://via.placeholder.com/44'
-                  : organization?.logo || 'https://via.placeholder.com/44'
+                uri: item.reporterAvatar || 'https://via.placeholder.com/44'
               }}
               style={styles.authorAvatar}
             />
             <View style={styles.authorDetails}>
               <Text style={styles.authorName}>
-                {isReport
-                  ? item.reporterName || 'Anonymous User'
-                  : organization?.name || 'Your Organization'
-                }
+                {item.reporterName || 'Anonymous User'}
               </Text>
               <Text style={styles.postTimestamp}>
                 {formatTimestamp(item.createdAt)}
@@ -191,12 +144,10 @@ export default function OrganizationDashboard({ navigation }) {
             </View>
           </View>
           
-          {/* Type Badge */}
+          {/* Type Badge - Always REPORT now */}
           <View style={[styles.typeBadge, getTypeStyle(item.sourceType)]}>
             <Ionicons name={getTypeIcon(item.sourceType)} size={12} color="#fff" />
-            <Text style={styles.badgeText}>
-              {isReport ? 'REPORT' : 'POST'}
-            </Text>
+            <Text style={styles.badgeText}>REPORT</Text>
           </View>
         </View>
 
@@ -210,8 +161,8 @@ export default function OrganizationDashboard({ navigation }) {
           <Image source={{ uri: item.imageUrl }} style={styles.feedImage} />
         )}
 
-        {/* Report-specific: Mentioned Organizations */}
-        {isReport && item.mentionedOrganizations && (
+        {/* Mentioned Organizations */}
+        {item.mentionedOrganizations && (
           <View style={styles.mentionedOrgsContainer}>
             <Text style={styles.mentionedOrgsLabel}>Mentioned Organizations:</Text>
             <View style={styles.mentionedOrgs}>
@@ -247,37 +198,33 @@ export default function OrganizationDashboard({ navigation }) {
             <Text style={styles.engagementText}>{item.views?.length || 0}</Text>
           </TouchableOpacity>
 
-          {/* Report-specific: Respond button */}
-          {isReport && (
-            <TouchableOpacity 
-              style={styles.respondButton}
-              onPress={() => navigation.navigate('RespondToReport', { report: item })}
-            >
-              <Ionicons name="mail-outline" size={16} color="#2B2B2B" />
-              <Text style={styles.respondText}>Respond</Text>
-            </TouchableOpacity>
-          )}
+          {/* Respond button - Always shown for reports */}
+          <TouchableOpacity 
+            style={styles.respondButton}
+            onPress={() => navigation.navigate('RespondToReport', { report: item })}
+          >
+            <Ionicons name="mail-outline" size={16} color="#2B2B2B" />
+            <Text style={styles.respondText}>Respond</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
   };
 
   const getTypeStyle = (sourceType) => {
-    return sourceType === 'report' 
-      ? { backgroundColor: '#E74C3C' }
-      : { backgroundColor: '#4e8cff' };
+    return { backgroundColor: '#E74C3C' }; // Always red for reports
   };
 
   const getTypeIcon = (sourceType) => {
-    return sourceType === 'report' ? 'flag' : 'megaphone';
+    return 'flag'; // Always flag for reports
   };
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="newspaper-outline" size={80} color="#E0E0E0" />
-      <Text style={styles.emptyTitle}>No Activity Yet</Text>
+      <Ionicons name="flag-outline" size={80} color="#E0E0E0" />
+      <Text style={styles.emptyTitle}>No Reports Yet</Text>
       <Text style={styles.emptySubtitle}>
-        Your posts and community reports will appear here
+        Community reports about your organization will appear here
       </Text>
     </View>
   );
@@ -286,7 +233,7 @@ export default function OrganizationDashboard({ navigation }) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2B2B2B" />
-        <Text style={styles.loadingText}>Loading feed...</Text>
+        <Text style={styles.loadingText}>Loading reports...</Text>
       </View>
     );
   }
@@ -315,7 +262,7 @@ export default function OrganizationDashboard({ navigation }) {
         </View>
       </View>
 
-      {/* Feed Content */}
+      {/* Feed Content - Now only reports */}
       <FlatList
         data={feedItems}
         keyExtractor={(item) => `${item.sourceType}-${item.id}`}
