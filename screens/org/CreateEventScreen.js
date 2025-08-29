@@ -1,28 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
+import { addDoc, arrayUnion, collection, doc, updateDoc } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  Switch,
-  Image,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { collection, addDoc, doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { useAppContext } from '../../contexts/AppContext';
 import { db, storage } from '../../firebaseConfig';
-import * as ImagePicker from 'expo-image-picker';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Import local category images
-import environmentImg from '../../assets/images/environmentCat.jpeg';
 import educationImg from '../../assets/images/educationCat.jpeg';
+import environmentImg from '../../assets/images/environmentCat.jpeg';
 import healthcareImg from '../../assets/images/healthcareCat.jpeg';
 // import communityImg from '../../assets/images/communityCat.jpeg';
 
@@ -52,6 +52,9 @@ export default function CreateEventScreen({ navigation }) {
   const [contactPhone, setContactPhone] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [skills, setSkills] = useState('');
+  
+  // Chat feature state
+  const [withChat, setWithChat] = useState(false);
   
   // Event Type Feature
   const [eventType, setEventType] = useState('normal');
@@ -273,6 +276,9 @@ export default function CreateEventScreen({ navigation }) {
         contactPhone: contactPhone.trim(),
         isRecurring,
         
+        // Chat feature
+        withChat: withChat,
+        
         // Event Type Data
         eventType: eventType,
         
@@ -334,7 +340,7 @@ export default function CreateEventScreen({ navigation }) {
 
       Alert.alert(
         'Success!',
-        `Your event has been created successfully!`,
+        `Your event has been created successfully!${withChat ? ' Event chat will be available once volunteers register.' : ''}`,
         [
           {
             text: 'View Events',
@@ -371,6 +377,7 @@ export default function CreateEventScreen({ navigation }) {
     setSkills('');
     setContactPhone('');
     setIsRecurring(false);
+    setWithChat(false);
     setEventType('normal');
     setApplicationQuestions(['']);
     setRequiresApproval(true);
@@ -495,9 +502,9 @@ export default function CreateEventScreen({ navigation }) {
 
   const renderExternalFormSection = () => (
     <View style={styles.externalFormSection}>
-      <Text style={styles.sectionTitle}>External Form Link</Text>
+      <Text style={styles.sectionTitle}>External Registration Form</Text>
       <Text style={styles.sectionSubtitle}>
-        Provide a link to your Google Form, Typeform, or other external application form
+        Link to your Google Form or other registration platform
       </Text>
       
       <View style={styles.inputGroup}>
@@ -781,6 +788,22 @@ export default function CreateEventScreen({ navigation }) {
               value={contactPhone}
               onChangeText={setContactPhone}
               keyboardType="phone-pad"
+            />
+          </View>
+
+          {/* Chat Feature Toggle */}
+          <View style={styles.toggleGroup}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.label}>Enable Event Chat</Text>
+              <Text style={styles.toggleDescription}>
+                Create a dedicated chat room for this event. Volunteers can join after registering.
+              </Text>
+            </View>
+            <Switch
+              value={withChat}
+              onValueChange={setWithChat}
+              trackColor={{ false: '#ccc', true: '#4CAF50' }}
+              thumbColor={withChat ? '#fff' : '#f4f3f4'}
             />
           </View>
 
@@ -1252,3 +1275,4 @@ const styles = StyleSheet.create({
     height: 20,
   },
 });
+
