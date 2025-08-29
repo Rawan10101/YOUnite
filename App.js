@@ -26,6 +26,7 @@ import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScree
 import ProfileDetailsScreen from './screens/MainTabs/ProfileScreen/ProfileDetailsScreen';
 import ProfileScreen from './screens/MainTabs/ProfileScreen/ProfileScreen';
 import SettingsScreen from './screens/MainTabs/ProfileScreen/SettingsScreen';
+import ChatMainScreen from './screens/MainTabs/ChatScreen/ChatMainScreen'
 import AnalyOrgScreen from './screens/org/AnalyOrgScreen';
 // Organization Screens
 import CreateEventScreen from './screens/org/CreateEventScreen';
@@ -33,7 +34,6 @@ import CreatePostScreen from './screens/org/CreatePostScreen';
 import OrganizationDashboard from './screens/org/OrgDashboard';
 import OrganizationEvents from './screens/org/OrgEvents';
 import VoluntOrgScreen from './screens/org/VoluntOrgScreen';
-
 // Add this import to App.js
 
 // Note: Create these screens when needed:
@@ -66,6 +66,26 @@ function AuthStack() {
 }
 
 // VOLUNTEER TAB NAVIGATOR (your existing MainTabs)
+function ChatStackNavigator() {
+  console.log('ChatStackNavigator rendered'); // Add this debug log
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen 
+        name="ChatMain" 
+        component={ChatMainScreen} 
+        options={{ headerShown: false }} 
+      />
+      <Stack.Screen 
+        name="Chat"  // This is the correct screen name to navigate to
+        component={ChatScreen} 
+        options={{ headerShown: false }} 
+      />
+    </Stack.Navigator>
+  );
+}
+
+
+// VOLUNTEER TAB NAVIGATOR (your existing MainTabs)
 function VolunteerTabs() {
   return (
     <Tab.Navigator
@@ -81,6 +101,8 @@ function VolunteerTabs() {
             iconName = focused ? 'calendar' : 'calendar-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
+          } else if (route.name === 'ChatList') {  // Add this condition
+            iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
@@ -97,6 +119,18 @@ function VolunteerTabs() {
     >
       <Tab.Screen name="Feed" component={FeedStackScreen} />
       <Tab.Screen name="Discover" component={DiscoverStackScreen} />
+      
+      <Tab.Screen 
+        name="ChatList" 
+        component={ChatStackNavigator}
+        options={{
+          title: 'Chats',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubbles-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
       <Tab.Screen name="Events" component={EventsStackScreen} />
       <Tab.Screen name="Profile" component={ProfileStackScreen} />
     </Tab.Navigator>
@@ -170,7 +204,23 @@ function FeedStackScreen() {
   );
 }
 
+function EventDetailsScreenTab () {
 
+  return (
+     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen 
+        name="EventDetails" 
+        component={EventDetailsScreen} 
+        options={{ headerShown: false }} 
+      />
+      <Stack.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={{ headerShown: false }} 
+      />
+    </Stack.Navigator>
+  )
+}
 function DiscoverStackScreen() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
