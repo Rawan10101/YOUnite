@@ -145,12 +145,15 @@ function OrganizationTabs() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
-          if (route.name === 'Dashboard') {
+          if (route.name === 'Reports') {
             iconName = focused ? 'analytics' : 'analytics-outline';
           } else if (route.name === 'Events') {
             iconName = focused ? 'calendar' : 'calendar-outline';
           } else if (route.name === 'Volunteers') {
             iconName = focused ? 'people' : 'people-outline';
+          }
+          else if (route.name === 'Chat') {
+            iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
           }
           else if( route.name=='Volunteer'){
             iconName = focused ? 'people' : 'people-outline';
@@ -171,10 +174,10 @@ function OrganizationTabs() {
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Dashboard" component={OrganizationDashboardStack} />
+      <Tab.Screen name="Reports" component={OrganizationDashboardStack} />
       <Tab.Screen name="Events" component={OrganizationEventsStack} />
      <Tab.Screen name="Volunteer" component={VoluntOrgScreen} />
-     <Tab.Screen name="Analytics" component={AnalyOrgScreen} />
+     <Tab.Screen name="Chat" component={ChatStackNavigator} />
 
       <Tab.Screen name="Profile" component={ProfileStackScreen} />
     </Tab.Navigator>
