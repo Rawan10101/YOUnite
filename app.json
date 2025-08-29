@@ -10,7 +10,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +21,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.rawan101.Younite"
+      "package": "com.rawan101.Younite",
+      "runtimeVersion": "1.0.0"
     },
     "web": {
       "bundler": "metro",
@@ -45,6 +49,9 @@
       "eas": {
         "projectId": "ed1260d9-d340-47b5-b88c-9869f58fb27b"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ed1260d9-d340-47b5-b88c-9869f58fb27b"
     }
   }
 }
