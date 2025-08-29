@@ -117,11 +117,12 @@ function OrganizationTabs() {
             iconName = focused ? 'calendar' : 'calendar-outline';
           } else if (route.name === 'Volunteers') {
             iconName = focused ? 'people' : 'people-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'business' : 'business-outline';
           }
           else if( route.name=='Volunteer'){
             iconName = focused ? 'people' : 'people-outline';
+          }
+          else if (route.name === 'Profile') {
+            iconName = focused ? 'business' : 'business-outline';
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
@@ -184,6 +185,11 @@ function DiscoverStackScreen() {
         component={OrganizationDetailsScreen}
         options={{ headerShown: true, title: 'Organization' }}
       />
+      <Stack.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }
@@ -200,6 +206,11 @@ function EventsStackScreen() {
         name="OrganizationDetails"
         component={OrganizationDetailsScreen}
         options={{ headerShown: true, title: 'Organization' }}
+      />
+      <Stack.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );
@@ -241,6 +252,11 @@ function ProfileStackScreen() {
         component={SettingsScreen}
         options={{ headerShown: true, title: 'Settings' }}
       />
+      <Stack.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }
@@ -264,6 +280,11 @@ function OrganizationDashboardStack() {
         name="EventDetails"
         component={EventDetailsScreen}
         options={{ headerShown: false, title: 'Event Details' }}
+      />
+      <Stack.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={{ headerShown: false }}
       />
       
       {/* ... other screens */}
@@ -351,8 +372,6 @@ function AppContent() {
         } finally {
           setRoleLoading(false);
         }
-      } else {
-        setUserRole(null);
       }
     };
 
@@ -403,3 +422,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
 });
+
+

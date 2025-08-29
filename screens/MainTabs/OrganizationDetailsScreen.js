@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { arrayRemove, arrayUnion, collection, doc, limit, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, doc, getDoc, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -16,7 +16,6 @@ import {
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../contexts/AppContext';
 import { db } from '../../firebaseConfig';
-import { setDoc, getDoc } from 'firebase/firestore';
 
 export default function OrganizationDetailsScreen({ route, navigation }) {
   const { organization: initialOrganization } = route.params;

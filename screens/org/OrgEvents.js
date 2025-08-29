@@ -21,8 +21,8 @@ import { useAppContext } from '../../contexts/AppContext';
 import { db } from '../../firebaseConfig';
 
 // Import all local category images
-import environmentImg from '../../assets/images/environmentCat.jpeg';
 import educationImg from '../../assets/images/educationCat.jpeg';
+import environmentImg from '../../assets/images/environmentCat.jpeg';
 import healthcareImg from '../../assets/images/healthcareCat.jpeg';
 // import communityImg from '../../assets/images/communityCat.jpeg';
 
