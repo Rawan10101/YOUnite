@@ -117,7 +117,7 @@ function VolunteerTabs() {
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Feed" component={FeedStackScreen} />
+      {/* <Tab.Screen name="Feed" component={FeedStackScreen} /> */}
       <Tab.Screen name="Discover" component={DiscoverStackScreen} />
       
       <Tab.Screen 
@@ -349,13 +349,13 @@ function OrganizationEventsStack() {
       <Stack.Screen
         name="EventDetails"
         component={EventDetailsScreen}
-        options={{ headerShown: true, title: 'Event Details' }}
+        options={{ headerShown: false, title: 'Event Details' }}
       />
       {/* { Uncomment when you create these screens: */}
       <Stack.Screen 
         name="CreateEvent" 
         component={CreateEventScreen}
-        options={{ headerShown: true, title: 'Create Event' }}
+        options={{ headerShown: false, title: 'Create Event' }}
       />
       {/* <Stack.Screen 
         name="EditEvent" 
