@@ -235,6 +235,11 @@ export default function OrganizationEvents({ navigation }) {
     }
   };
 
+  // NEW: Handle viewing participants
+  const handleViewParticipants = (event) => {
+    navigation.navigate('EventParticipants', { event });
+  };
+
   const formatDate = (date) => {
     if (!date) return 'TBD';
     return date.toLocaleDateString('en-US', {
@@ -259,6 +264,7 @@ export default function OrganizationEvents({ navigation }) {
     const isUpcoming = daysUntil > 0;
     const isToday = daysUntil === 0;
     const isPast = daysUntil < 0;
+    const participantCount = item.registeredVolunteers?.length || 0;
 
     return (
       <Animatable.View
@@ -286,6 +292,12 @@ export default function OrganizationEvents({ navigation }) {
             {/* Status Badge */}
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
               <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+            </View>
+
+            {/* Participant Count Badge */}
+            <View style={styles.participantBadge}>
+              <Ionicons name="people" size={12} color="#fff" />
+              <Text style={styles.participantBadgeText}>{participantCount}</Text>
             </View>
 
             {/* Urgency Indicator */}
@@ -338,7 +350,7 @@ export default function OrganizationEvents({ navigation }) {
               <View style={styles.eventDetailRow}>
                 <Ionicons name="people-outline" size={16} color="#666" />
                 <Text style={styles.eventDetailText}>
-                  {item.registeredVolunteers?.length || 0}/{item.maxVolunteers || 0} volunteers
+                  {participantCount}/{item.maxVolunteers || 0} volunteers
                 </Text>
               </View>
             </View>
@@ -371,6 +383,17 @@ export default function OrganizationEvents({ navigation }) {
           >
             <Ionicons name="create-outline" size={16} color="#4e8cff" />
             <Text style={[styles.actionButtonText, { color: '#4e8cff' }]}>Edit</Text>
+          </TouchableOpacity>
+          
+          {/* NEW: Participants Button */}
+          <TouchableOpacity
+            style={[styles.actionButton, styles.participantsButton]}
+            onPress={() => handleViewParticipants(item)}
+          >
+            <Ionicons name="people-outline" size={16} color="#9C27B0" />
+            <Text style={[styles.actionButtonText, { color: '#9C27B0' }]}>
+              Participants ({participantCount})
+            </Text>
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -729,6 +752,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  // NEW: Participant Badge
+  participantBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 80, // Position next to status badge
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  participantBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
   urgencyBadge: {
     position: 'absolute',
     top: 12,
@@ -819,6 +860,7 @@ const styles = StyleSheet.create({
   // Actions
   eventActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap', // Allow wrapping for more buttons
     paddingHorizontal: 20,
     paddingVertical: 15,
     backgroundColor: '#f8f9fa',
@@ -832,6 +874,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     marginRight: 8,
+    marginBottom: 8, // Add margin bottom for wrapping
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#eee',
@@ -843,6 +886,10 @@ const styles = StyleSheet.create({
   },
   editButton: {
     borderColor: '#4e8cff',
+  },
+  // NEW: Participants Button Style
+  participantsButton: {
+    borderColor: '#9C27B0',
   },
   statusButton: {
     borderColor: '#FF9800',
@@ -888,3 +935,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+

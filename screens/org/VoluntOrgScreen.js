@@ -1,31 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
   FlatList,
   Image,
-  ActivityIndicator,
   Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
 import { useAppContext } from '../../contexts/AppContext';
+import { db } from '../../firebaseConfig';
+import FollowersManager from '../../utils/FollowersManager'; //utils/FollowersManager.js
 
-const SECTIONS = ['Active Volunteers', 'Followers', 'Applications', 'Top Volunteers'];
+const SECTIONS = ['Applications', 'Followers', 'Active Volunteers', 'Top Volunteers'];
 
 export default function VolunteersTab({ navigation }) {
   const { user } = useAppContext();
-  const [selectedSection, setSelectedSection] = useState('Active Volunteers');
+  const [selectedSection, setSelectedSection] = useState('Applications'); // Default to Applications
   const [activeVolunteers, setActiveVolunteers] = useState([]);
   const [followers, setFollowers] = useState([]);
   const [applications, setApplications] = useState([]);
   const [topVolunteers, setTopVolunteers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [followerStats, setFollowerStats] = useState(null);
 
-  // Fixed useEffect with proper cleanup
   useEffect(() => {
     if (!user?.uid) {
       setLoading(false);
@@ -33,116 +35,281 @@ export default function VolunteersTab({ navigation }) {
     }
 
     setLoading(true);
+    loadOrganizationData();
+  }, [user?.uid]);
 
-    // Load data once instead of using real-time listeners (which can cause loops)
-    const loadVolunteerData = async () => {
-      try {
-        // Get organization data to find followers
-        const orgDoc = await getDoc(doc(db, 'organizations', user.uid));
-        if (orgDoc.exists()) {
-          const orgData = orgDoc.data();
-          setFollowers(orgData.followers || []);
-        }
+  const loadOrganizationData = async () => {
+    try {
+      // Load followers using FollowersManager
+      await loadFollowers();
+      
+      // Load applications grouped by events
+      await loadApplications();
+      
+      // Load other data (mock for now)
+      loadMockData();
 
-        // Mock data for now - replace with actual queries
-        setActiveVolunteers([
-          {
-            id: '1',
-            displayName: 'John Doe',
-            email: 'john@example.com',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 5,
-            hours: 25,
-          },
-          {
-            id: '2',
-            displayName: 'Jane Smith',
-            email: 'jane@example.com',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 3,
-            hours: 18,
-          },
-        ]);
-
-        setApplications([
-          {
-            id: '1',
-            volunteerName: 'Mike Wilson',
-            eventName: 'Beach Cleanup',
-            createdAt: { seconds: Date.now() / 1000 },
-            status: 'pending',
-          },
-          {
-            id: '2',
-            volunteerName: 'Sarah Johnson',
-            eventName: 'Tree Planting',
-            createdAt: { seconds: Date.now() / 1000 },
-            status: 'pending',
-          },
-        ]);
-
-        setTopVolunteers([
-          {
-            id: '1',
-            displayName: 'John Doe',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 8,
-            hours: 45,
-            volunteerScore: 95,
-          },
-          {
-            id: '2',
-            displayName: 'Emily Davis',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 6,
-            hours: 32,
-            volunteerScore: 87,
-          },
-        ]);
-
-      } catch (error) {
-        console.error('Error loading volunteer data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadVolunteerData();
-  }, [user?.uid]); // Only depend on user.uid
-
-  const handleApproveApplication = (appId) => {
-    // TODO: Update application status in Firestore
-    console.log('Approve application:', appId);
-    setApplications(prev => prev.filter(app => app.id !== appId));
+    } catch (error) {
+      console.error('Error loading organization data:', error);
+      Alert.alert('Error', 'Failed to load volunteer data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRejectApplication = (appId) => {
-    // TODO: Update application status in Firestore
-    console.log('Reject application:', appId);
-    setApplications(prev => prev.filter(app => app.id !== appId));
+  const loadFollowers = async () => {
+    try {
+      console.log('Loading followers for organization:', user.uid);
+      
+      // Get followers using FollowersManager
+      const followersData = await FollowersManager.getOrganizationFollowers(user.uid);
+      setFollowers(followersData);
+      
+      // Get follower statistics
+      const stats = await FollowersManager.getFollowerStats(user.uid);
+      setFollowerStats(stats);
+      
+      console.log(`Loaded ${followersData.length} followers`);
+      
+    } catch (error) {
+      console.error('Error loading followers:', error);
+      setFollowers([]);
+      setFollowerStats(null);
+    }
+  };
+
+  const loadApplications = async () => {
+    try {
+      console.log('Loading applications for organization:', user.uid);
+      
+      // First, get all events for this organization
+      const eventsQuery = query(
+        collection(db, 'events'), 
+        where('organizationId', '==', user.uid)
+      );
+      
+      const eventsSnapshot = await getDocs(eventsQuery);
+      const allApplications = [];
+      
+      // For each event, get its applications
+      for (const eventDoc of eventsSnapshot.docs) {
+        const eventId = eventDoc.id;
+        const eventData = eventDoc.data();
+        const eventTitle = eventData.title;
+        
+        try {
+          // Get applications subcollection for this event - FIXED: Use getDocs instead of getDoc
+          const applicationsQuery = collection(db, 'events', eventId, 'applications');
+          const applicationsSnapshot = await getDocs(applicationsQuery); // FIXED: This was the issue
+          
+          const eventApplications = [];
+          applicationsSnapshot.forEach(appDoc => {
+            const appData = appDoc.data();
+            eventApplications.push({
+              id: appDoc.id,
+              ...appData,
+              eventName: eventTitle,
+              eventId: eventId,
+            });
+          });
+          
+          if (eventApplications.length > 0) {
+            allApplications.push({
+              eventId: eventId,
+              eventName: eventTitle,
+              applications: eventApplications,
+              applicationCount: eventApplications.length,
+            });
+          }
+          
+        } catch (error) {
+          console.error(`Error loading applications for event ${eventId}:`, error);
+        }
+      }
+      
+      // Sort by event name
+      allApplications.sort((a, b) => a.eventName.localeCompare(b.eventName));
+      
+      setApplications(allApplications);
+      console.log(`Loaded applications for ${allApplications.length} events`);
+      
+    } catch (error) {
+      console.error('Error loading applications:', error);
+      setApplications([]);
+    }
+  };
+
+  const loadMockData = () => {
+    // Mock data for Active Volunteers and Top Volunteers
+    // TODO: Replace with real data from Firebase
+    setActiveVolunteers([
+      {
+        id: '1',
+        displayName: 'John Doe',
+        email: 'john@example.com',
+        photoURL: 'https://via.placeholder.com/40',
+        eventsAttended: 5,
+        hours: 25,
+      },
+      {
+        id: '2',
+        displayName: 'Jane Smith',
+        email: 'jane@example.com',
+        photoURL: 'https://via.placeholder.com/40',
+        eventsAttended: 3,
+        hours: 18,
+      },
+    ]);
+
+    setTopVolunteers([
+      {
+        id: '1',
+        displayName: 'John Doe',
+        photoURL: 'https://via.placeholder.com/40',
+        eventsAttended: 8,
+        hours: 45,
+        volunteerScore: 95,
+      },
+      {
+        id: '2',
+        displayName: 'Emily Davis',
+        photoURL: 'https://via.placeholder.com/40',
+        eventsAttended: 6,
+        hours: 32,
+        volunteerScore: 87,
+      },
+    ]);
+  };
+
+  const handleApproveApplication = async (appId, eventId) => {
+    try {
+      console.log('Approve application:', appId, 'for event:', eventId);
+      
+      // Update application status in Firestore
+      const appRef = doc(db, 'events', eventId, 'applications', appId);
+      await updateDoc(appRef, {
+        status: 'approved',
+        approvedAt: new Date(),
+        approvedBy: user.uid,
+      });
+      
+      // Refresh applications
+      await loadApplications();
+      
+      Alert.alert('Success', 'Application approved successfully');
+      
+    } catch (error) {
+      console.error('Error approving application:', error);
+      Alert.alert('Error', 'Failed to approve application');
+    }
+  };
+
+  const handleRejectApplication = async (appId, eventId) => {
+    try {
+      console.log('Reject application:', appId, 'for event:', eventId);
+      
+      // Update application status in Firestore
+      const appRef = doc(db, 'events', eventId, 'applications', appId);
+      await updateDoc(appRef, {
+        status: 'rejected',
+        rejectedAt: new Date(),
+        rejectedBy: user.uid,
+      });
+      
+      // Refresh applications
+      await loadApplications();
+      
+      Alert.alert('Success', 'Application rejected successfully');
+      
+    } catch (error) {
+      console.error('Error rejecting application:', error);
+      Alert.alert('Error', 'Failed to reject application');
+    }
+  };
+
+  const handleRemoveFollower = async (followerId) => {
+    try {
+      Alert.alert(
+        'Remove Follower',
+        'Are you sure you want to remove this follower?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await FollowersManager.removeFollower(user.uid, followerId);
+                
+                // Refresh followers list
+                await loadFollowers();
+                
+                Alert.alert('Success', 'Follower removed successfully');
+              } catch (error) {
+                console.error('Error removing follower:', error);
+                Alert.alert('Error', 'Failed to remove follower');
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Error in handleRemoveFollower:', error);
+    }
   };
 
   const renderSectionTabs = () => (
     <View style={styles.tabsContainer}>
-      {SECTIONS.map((section) => (
-        <TouchableOpacity
-          key={section}
-          style={[
-            styles.tab,
-            selectedSection === section && styles.activeTab,
-          ]}
-          onPress={() => setSelectedSection(section)}
-        >
-          <Text
+      {SECTIONS.map((section) => {
+        let count = 0;
+        switch (section) {
+          case 'Applications':
+            count = applications.reduce((total, eventGroup) => total + eventGroup.applications.length, 0);
+            break;
+          case 'Followers':
+            count = followers.length;
+            break;
+          case 'Active Volunteers':
+            count = activeVolunteers.length;
+            break;
+          case 'Top Volunteers':
+            count = topVolunteers.length;
+            break;
+        }
+
+        return (
+          <TouchableOpacity
+            key={section}
             style={[
-              styles.tabText,
-              selectedSection === section && styles.activeTabText,
+              styles.tab,
+              selectedSection === section && styles.activeTab,
             ]}
+            onPress={() => setSelectedSection(section)}
           >
-            {section.split(' ')[0]} {/* Show first word to save space */}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <Text
+              style={[
+                styles.tabText,
+                selectedSection === section && styles.activeTabText,
+              ]}
+            >
+              {section.split(' ')[0]} {/* Show first word to save space */}
+            </Text>
+            {count > 0 && (
+              <View style={[
+                styles.tabBadge,
+                selectedSection === section && styles.activeTabBadge
+              ]}>
+                <Text style={[
+                  styles.tabBadgeText,
+                  selectedSection === section && styles.activeTabBadgeText
+                ]}>
+                  {count}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 
@@ -180,30 +347,63 @@ export default function VolunteersTab({ navigation }) {
   const renderApplicationCard = ({ item }) => (
     <View style={styles.applicationCard}>
       <View style={styles.applicationInfo}>
-        <Text style={styles.volunteerName}>{item.volunteerName}</Text>
+        <Text style={styles.volunteerName}>{item.volunteerName || 'Unknown Volunteer'}</Text>
         <Text style={styles.eventName}>Applied for: {item.eventName}</Text>
         <Text style={styles.applicationDate}>
-          {new Date(item.createdAt.seconds * 1000).toLocaleDateString()}
+          {item.createdAt?.seconds 
+            ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+            : item.createdAt?.toDate
+            ? item.createdAt.toDate().toLocaleDateString()
+            : 'Unknown date'
+          }
         </Text>
+        {item.message && (
+          <Text style={styles.applicationMessage} numberOfLines={2}>
+            Message: {item.message}
+          </Text>
+        )}
+        {item.status && (
+          <View style={[
+            styles.applicationStatusBadge,
+            { backgroundColor: getApplicationStatusColor(item.status) }
+          ]}>
+            <Text style={styles.applicationStatusText}>
+              {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+            </Text>
+          </View>
+        )}
       </View>
-      <View style={styles.applicationActions}>
-        <TouchableOpacity
-          style={styles.approveButton}
-          onPress={() => handleApproveApplication(item.id)}
-        >
-          <Ionicons name="checkmark" size={18} color="#4CAF50" />
-          <Text style={styles.approveText}>Approve</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.rejectButton}
-          onPress={() => handleRejectApplication(item.id)}
-        >
-          <Ionicons name="close" size={18} color="#E74C3C" />
-          <Text style={styles.rejectText}>Reject</Text>
-        </TouchableOpacity>
-      </View>
+      
+      {/* Only show action buttons for pending applications */}
+      {(!item.status || item.status === 'pending') && (
+        <View style={styles.applicationActions}>
+          <TouchableOpacity
+            style={styles.approveButton}
+            onPress={() => handleApproveApplication(item.id, item.eventId)}
+          >
+            <Ionicons name="checkmark" size={18} color="#4CAF50" />
+            <Text style={styles.approveText}>Approve</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.rejectButton}
+            onPress={() => handleRejectApplication(item.id, item.eventId)}
+          >
+            <Ionicons name="close" size={18} color="#E74C3C" />
+            <Text style={styles.rejectText}>Reject</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
+
+  const getApplicationStatusColor = (status) => {
+    switch (status) {
+      case 'approved': return '#4CAF50';
+      case 'rejected': return '#F44336';
+      case 'pending':
+      default: return '#FF9800';
+    }
+  };
 
   const renderFollowerCard = ({ item }) => (
     <View style={styles.followerCard}>
@@ -215,14 +415,54 @@ export default function VolunteersTab({ navigation }) {
         <Text style={styles.followerName}>
           {item.displayName || item.name || 'Follower'}
         </Text>
-        <Text style={styles.followerStatus}>Following since 2024</Text>
+        <Text style={styles.followerStatus}>
+          {item.role === 'volunteer' ? 'Volunteer' : 'User'} • Following since 2024
+        </Text>
+        {item.location && (
+          <Text style={styles.followerLocation}>
+            <Ionicons name="location-outline" size={12} color="#999" />
+            {' '}{item.location}
+          </Text>
+        )}
+        {item.skills && item.skills.length > 0 && (
+          <Text style={styles.followerSkills} numberOfLines={1}>
+            Skills: {item.skills.slice(0, 3).join(', ')}
+            {item.skills.length > 3 && '...'}
+          </Text>
+        )}
       </View>
-      <TouchableOpacity
-        style={styles.messageButton}
-        onPress={() => navigation.navigate('SendMessage', { userId: item.id })}
-      >
-        <Ionicons name="mail-outline" size={20} color="#4e8cff" />
-      </TouchableOpacity>
+      <View style={styles.followerActions}>
+        <TouchableOpacity
+          style={styles.messageButton}
+          onPress={() => navigation.navigate('SendMessage', { userId: item.id })}
+        >
+          <Ionicons name="mail-outline" size={20} color="#4e8cff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.removeButton}
+          onPress={() => handleRemoveFollower(item.id)}
+        >
+          <Ionicons name="person-remove-outline" size={20} color="#E74C3C" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderEventApplicationsGroup = ({ item }) => (
+    <View style={styles.eventApplicationsGroup}>
+      <View style={styles.eventApplicationsHeader}>
+        <Text style={styles.eventApplicationsTitle}>{item.eventName}</Text>
+        <View style={styles.applicationCountBadge}>
+          <Text style={styles.applicationCountText}>{item.applicationCount}</Text>
+        </View>
+      </View>
+      <FlatList
+        data={item.applications}
+        keyExtractor={(app) => app.id}
+        renderItem={renderApplicationCard}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={false} // Disable scrolling for nested FlatList
+      />
     </View>
   );
 
@@ -233,7 +473,7 @@ export default function VolunteersTab({ navigation }) {
       case 'Followers':
         return followers;
       case 'Applications':
-        return applications;
+        return applications; // Return grouped applications
       case 'Top Volunteers':
         return topVolunteers;
       default:
@@ -248,7 +488,7 @@ export default function VolunteersTab({ navigation }) {
       case 'Followers':
         return renderFollowerCard;
       case 'Applications':
-        return renderApplicationCard;
+        return renderEventApplicationsGroup; // Render grouped applications
       case 'Top Volunteers':
         return renderVolunteerCard;
       default:
@@ -261,9 +501,9 @@ export default function VolunteersTab({ navigation }) {
       case 'Active Volunteers':
         return 'No active volunteers at the moment';
       case 'Followers':
-        return 'No followers yet';
+        return 'No followers yet. Share your organization to gain followers!';
       case 'Applications':
-        return 'No pending applications';
+        return 'No pending applications. Create events to receive applications!';
       case 'Top Volunteers':
         return 'No top volunteers to show';
       default:
@@ -286,6 +526,24 @@ export default function VolunteersTab({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Volunteers</Text>
         <Text style={styles.headerSubtitle}>Manage your volunteer community</Text>
+        
+        {/* Follower Stats */}
+        {followerStats && selectedSection === 'Followers' && (
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{followerStats.totalFollowers}</Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{followerStats.volunteerFollowers}</Text>
+              <Text style={styles.statLabel}>Volunteers</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{followerStats.recentFollowers}</Text>
+              <Text style={styles.statLabel}>Recent</Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Section Tabs */}
@@ -294,13 +552,17 @@ export default function VolunteersTab({ navigation }) {
       {/* Content */}
       <FlatList
         data={getCurrentData()}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => selectedSection === 'Applications' ? item.eventId : item.id}
         renderItem={getCurrentRenderItem()}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="people-outline" size={64} color="#ccc" />
+            <Ionicons 
+              name={selectedSection === 'Applications' ? 'document-text-outline' : 'people-outline'} 
+              size={64} 
+              color="#ccc" 
+            />
             <Text style={styles.emptyText}>{getEmptyMessage()}</Text>
           </View>
         }
@@ -345,6 +607,29 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  // Stats Container
+  statsContainer: {
+    flexDirection: 'row',
+    marginTop: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4e8cff',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+
   // Tabs
   tabsContainer: {
     flexDirection: 'row',
@@ -362,6 +647,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     marginHorizontal: 2,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   activeTab: {
     backgroundColor: '#4e8cff',
@@ -373,6 +660,26 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: '#fff',
+  },
+  tabBadge: {
+    backgroundColor: '#666',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 4,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  activeTabBadge: {
+    backgroundColor: '#fff',
+  },
+  tabBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  activeTabBadgeText: {
+    color: '#4e8cff',
   },
 
   // List
@@ -453,6 +760,24 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 2,
   },
+  applicationMessage: {
+    fontSize: 14,
+    color: '#333',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  applicationStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  applicationStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+  },
   applicationActions: {
     flexDirection: 'row',
     gap: 12,
@@ -511,16 +836,75 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
+  followerLocation: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 2,
+  },
+  followerSkills: {
+    fontSize: 12,
+    color: '#4e8cff',
+    marginTop: 4,
+  },
+  followerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  removeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFEBEE',
+  },
+
+  // Event Applications Group
+  eventApplicationsGroup: {
+    backgroundColor: '#EBF4FF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  eventApplicationsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  eventApplicationsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2B2B2B',
+    flex: 1,
+  },
+  applicationCountBadge: {
+    backgroundColor: '#4e8cff',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+  },
+  applicationCountText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
 
   // Empty State
   emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
   },
   emptyText: {
     fontSize: 16,
     color: '#666',
-    marginTop: 16,
     textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 24,
   },
 });
+

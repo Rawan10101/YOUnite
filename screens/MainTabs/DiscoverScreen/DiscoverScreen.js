@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { arrayRemove, arrayUnion, collection, doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -14,6 +14,7 @@ import {
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';
 import { db } from '../../../firebaseConfig';
+import FollowersManager from '../../../utils/FollowersManager';
 
 export default function DiscoverScreen({ navigation }) {
   const { user, followedOrganizations, setFollowedOrganizations } = useAppContext();
@@ -21,6 +22,7 @@ export default function DiscoverScreen({ navigation }) {
   const [organizations, setOrganizations] = useState([]);
   const [filteredOrganizations, setFilteredOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [followingStates, setFollowingStates] = useState({}); // Track individual follow states
 
   // Fetch organizations from Firestore
   useEffect(() => {
@@ -103,58 +105,70 @@ export default function DiscoverScreen({ navigation }) {
     setFilteredOrganizations(filtered);
   };
 
-const handleFollow = async (orgId) => {
-  if (!user?.uid) {
-    Alert.alert('Error', 'You must be logged in to follow organizations.');
-    return;
-  }
-
-  const orgToUpdate = organizations.find(org => org.id === orgId);
-  if (!orgToUpdate) return;
-
-  try {
-    console.log('Updating organization followers for:', orgId);
-    const orgRef = doc(db, 'organizations', orgId);
-
-    if (orgToUpdate.isFollowing) {
-      // Unfollow - remove user from organization's followers
-      await updateDoc(orgRef, {
-        followers: arrayRemove(user.uid)
-      });
-      
-      setFollowedOrganizations(prev => prev.filter(id => id !== orgId));
-      console.log('Successfully unfollowed');
-      
-    } else {
-      // Follow - add user to organization's followers
-      await updateDoc(orgRef, {
-        followers: arrayUnion(user.uid)
-      });
-      
-      setFollowedOrganizations(prev => [...prev, orgId]);
-      console.log('Successfully followed');
+  const handleFollow = async (orgId) => {
+    if (!user?.uid) {
+      Alert.alert('Authentication Required', 'Please log in to follow organizations.');
+      return;
     }
 
-  } catch (error) {
-    console.error('Full error object:', error);
-    console.error('Error code:', error?.code);
-    console.error('Error message:', error?.message);
-    
-    let errorMessage = 'Failed to update follow status';
-    
-    if (error?.code === 'permission-denied') {
-      errorMessage = 'You do not have permission to perform this action';
-    } else if (error?.code === 'not-found') {
-      errorMessage = 'Organization not found';
-    } else if (error?.message) {
-      errorMessage = error.message;
+    const orgToUpdate = organizations.find(org => org.id === orgId);
+    if (!orgToUpdate) return;
+
+    // Set loading state for this specific organization
+    setFollowingStates(prev => ({ ...prev, [orgId]: true }));
+
+    try {
+      console.log('Updating organization followers for:', orgId);
+      
+      if (orgToUpdate.isFollowing) {
+        // Unfollow
+        await FollowersManager.unfollowOrganization(user.uid, orgId);
+        setFollowedOrganizations(prev => prev.filter(id => id !== orgId));
+        console.log('Successfully unfollowed');
+        
+      } else {
+        // Follow
+        await FollowersManager.followOrganization(user.uid, orgId);
+        setFollowedOrganizations(prev => [...prev, orgId]);
+        console.log('Successfully followed');
+      }
+
+      // Update local state immediately for better UX
+      setOrganizations(prev => prev.map(org => 
+        org.id === orgId 
+          ? { 
+              ...org, 
+              isFollowing: !org.isFollowing,
+              followerCount: org.isFollowing ? org.followerCount - 1 : org.followerCount + 1
+            }
+          : org
+      ));
+
+    } catch (error) {
+      console.error('Follow/Unfollow error:', error);
+      
+      let errorMessage = 'Failed to update follow status';
+      
+      if (error.message.includes('Already following')) {
+        errorMessage = 'You are already following this organization';
+      } else if (error.message.includes('Not following')) {
+        errorMessage = 'You are not following this organization';
+      } else if (error.message.includes('cannot follow themselves')) {
+        errorMessage = 'Organizations cannot follow themselves';
+      } else if (error.message.includes('Organization not found')) {
+        errorMessage = 'Organization not found';
+      } else if (error.code === 'permission-denied') {
+        errorMessage = 'You do not have permission to perform this action';
+      } else if (error.code === 'unavailable') {
+        errorMessage = 'Service temporarily unavailable. Please try again.';
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      // Clear loading state
+      setFollowingStates(prev => ({ ...prev, [orgId]: false }));
     }
-    
-    Alert.alert('Error', errorMessage);
-  }
-};
-
-
+  };
 
   const getCategoryColor = (category) => {
     const colors = {
@@ -168,83 +182,100 @@ const handleFollow = async (orgId) => {
     return colors[category] || '#666';
   };
 
-  const renderOrganizationItem = ({ item, index }) => (
-    <Animatable.View
-      animation="fadeInUp"
-      delay={index * 50}
-      style={styles.organizationItem}
-    >
-      <TouchableOpacity
-        onPress={() => navigation.navigate('OrganizationDetails', { organization: item })}
-        style={styles.organizationContent}
-        activeOpacity={0.7}
+  const renderOrganizationItem = ({ item, index }) => {
+    const isFollowLoading = followingStates[item.id] || false;
+    
+    return (
+      <Animatable.View
+        animation="fadeInUp"
+        delay={index * 50}
+        style={styles.organizationItem}
       >
-        <View style={styles.logoContainer}>
-          <Image 
-            source={{ uri: item.logo || 'https://via.placeholder.com/60' }} 
-            style={styles.organizationLogo} 
-          />
-          {item.isVerified && (
-            <View style={styles.verifiedBadge}>
-              <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
-            </View>
-          )}
-        </View>
-
-        <View style={styles.organizationInfo}>
-          <View style={styles.nameRow}>
-            <Text style={styles.organizationName} numberOfLines={1}>
-              {item.name}
-            </Text>
-            {item.category && (
-              <View style={[styles.categoryTag, { backgroundColor: getCategoryColor(item.category) }]}>
-                <Text style={styles.categoryText}>{item.category}</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('OrganizationDetails', { organization: item })}
+          style={styles.organizationContent}
+          activeOpacity={0.7}
+        >
+          <View style={styles.logoContainer}>
+            <Image 
+              source={{ uri: item.logo || 'https://via.placeholder.com/60' }} 
+              style={styles.organizationLogo} 
+            />
+            {item.isVerified && (
+              <View style={styles.verifiedBadge}>
+                <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
               </View>
             )}
           </View>
-          
-          {item.description && (
-            <Text style={styles.organizationDescription} numberOfLines={2}>
-              {item.description}
-            </Text>
-          )}
-          
-          <View style={styles.statsRow}>
-            {item.location && (
-              <Text style={styles.statItem}>
-                <Ionicons name="location-outline" size={12} color="#999" />
-                {' '}{item.location}
+
+          <View style={styles.organizationInfo}>
+            <View style={styles.nameRow}>
+              <Text style={styles.organizationName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              {item.category && (
+                <View style={[styles.categoryTag, { backgroundColor: getCategoryColor(item.category) }]}>
+                  <Text style={styles.categoryText}>{item.category}</Text>
+                </View>
+              )}
+            </View>
+            
+            {item.description && (
+              <Text style={styles.organizationDescription} numberOfLines={2}>
+                {item.description}
               </Text>
             )}
-            <Text style={styles.statItem}>
-              <Ionicons name="people-outline" size={12} color="#999" />
-              {' '}{item.followerCount} followers
-            </Text>
-            <Text style={styles.statItem}>
-              <Ionicons name="calendar-outline" size={12} color="#999" />
-              {' '}{item.upcomingEvents || 0} events
-            </Text>
+            
+            <View style={styles.statsRow}>
+              {item.location && (
+                <Text style={styles.statItem}>
+                  <Ionicons name="location-outline" size={12} color="#999" />
+                  {' '}{item.location}
+                </Text>
+              )}
+              <Text style={styles.statItem}>
+                <Ionicons name="people-outline" size={12} color="#999" />
+                {' '}{item.followerCount} followers
+              </Text>
+              <Text style={styles.statItem}>
+                <Ionicons name="calendar-outline" size={12} color="#999" />
+                {' '}{item.upcomingEvents || 0} events
+              </Text>
+            </View>
           </View>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[
-          styles.followButton,
-          item.isFollowing && styles.followingButton
-        ]}
-        onPress={() => handleFollow(item.id)}
-        activeOpacity={0.8}
-      >
-        <Text style={[
-          styles.followButtonText,
-          item.isFollowing && styles.followingButtonText
-        ]}>
-          {item.isFollowing ? 'Following' : 'Follow'}
-        </Text>
-      </TouchableOpacity>
-    </Animatable.View>
-  );
+        <TouchableOpacity
+          style={[
+            styles.followButton,
+            item.isFollowing && styles.followingButton,
+            isFollowLoading && styles.followButtonLoading
+          ]}
+          onPress={() => handleFollow(item.id)}
+          activeOpacity={0.8}
+          disabled={isFollowLoading}
+        >
+          {isFollowLoading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={[
+                styles.followButtonText,
+                item.isFollowing && styles.followingButtonText
+              ]}>
+                {item.isFollowing ? 'Unfollowing...' : 'Following...'}
+              </Text>
+            </View>
+          ) : (
+            <Text style={[
+              styles.followButtonText,
+              item.isFollowing && styles.followingButtonText
+            ]}>
+              {item.isFollowing ? 'Following' : 'Follow'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </Animatable.View>
+    );
+  };
 
   if (loading) {
     return (
@@ -318,6 +349,7 @@ const handleFollow = async (orgId) => {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -481,6 +513,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2B2B2B',
   },
+
+  followButtonLoading: {
+    opacity: 0.7,
+  },
   
   followButtonText: {
     fontSize: 14,
@@ -502,18 +538,17 @@ const styles = StyleSheet.create({
   
   loadingText: {
     marginTop: 16,
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
+    fontSize: 18,
+    color: '#2B2B2B',
+    fontWeight: '600',
   },
   
-  // Empty State
+  // Empty Container
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingTop: 80,
+    paddingHorizontal: 40,
   },
   
   emptyText: {
@@ -525,18 +560,18 @@ const styles = StyleSheet.create({
   },
   
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#666666',
     marginTop: 8,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 24,
   },
   
   clearAllButton: {
     backgroundColor: '#2B2B2B',
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 25,
+    borderRadius: 24,
     marginTop: 24,
   },
   
@@ -546,3 +581,4 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
+
