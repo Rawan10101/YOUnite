@@ -1,31 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
   FlatList,
   Image,
-  ActivityIndicator,
   Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
 import { useAppContext } from '../../contexts/AppContext';
+import { db } from '../../firebaseConfig';
+import FollowersManager from '../../utils/FollowersManager';
 
-const SECTIONS = ['Active Volunteers', 'Followers', 'Applications', 'Top Volunteers'];
+// Simplified sections - removed mock data sections
+const SECTIONS = ['Applications', 'Followers'];
 
 export default function VolunteersTab({ navigation }) {
   const { user } = useAppContext();
-  const [selectedSection, setSelectedSection] = useState('Active Volunteers');
-  const [activeVolunteers, setActiveVolunteers] = useState([]);
+  const [selectedSection, setSelectedSection] = useState('Applications');
   const [followers, setFollowers] = useState([]);
   const [applications, setApplications] = useState([]);
-  const [topVolunteers, setTopVolunteers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [followerStats, setFollowerStats] = useState(null);
 
-  // Fixed useEffect with proper cleanup
   useEffect(() => {
     if (!user?.uid) {
       setLoading(false);
@@ -33,177 +34,270 @@ export default function VolunteersTab({ navigation }) {
     }
 
     setLoading(true);
+    loadOrganizationData();
+  }, [user?.uid]);
 
-    // Load data once instead of using real-time listeners (which can cause loops)
-    const loadVolunteerData = async () => {
-      try {
-        // Get organization data to find followers
-        const orgDoc = await getDoc(doc(db, 'organizations', user.uid));
-        if (orgDoc.exists()) {
-          const orgData = orgDoc.data();
-          setFollowers(orgData.followers || []);
-        }
-
-        // Mock data for now - replace with actual queries
-        setActiveVolunteers([
-          {
-            id: '1',
-            displayName: 'John Doe',
-            email: 'john@example.com',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 5,
-            hours: 25,
-          },
-          {
-            id: '2',
-            displayName: 'Jane Smith',
-            email: 'jane@example.com',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 3,
-            hours: 18,
-          },
-        ]);
-
-        setApplications([
-          {
-            id: '1',
-            volunteerName: 'Mike Wilson',
-            eventName: 'Beach Cleanup',
-            createdAt: { seconds: Date.now() / 1000 },
-            status: 'pending',
-          },
-          {
-            id: '2',
-            volunteerName: 'Sarah Johnson',
-            eventName: 'Tree Planting',
-            createdAt: { seconds: Date.now() / 1000 },
-            status: 'pending',
-          },
-        ]);
-
-        setTopVolunteers([
-          {
-            id: '1',
-            displayName: 'John Doe',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 8,
-            hours: 45,
-            volunteerScore: 95,
-          },
-          {
-            id: '2',
-            displayName: 'Emily Davis',
-            photoURL: 'https://via.placeholder.com/40',
-            eventsAttended: 6,
-            hours: 32,
-            volunteerScore: 87,
-          },
-        ]);
-
-      } catch (error) {
-        console.error('Error loading volunteer data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadVolunteerData();
-  }, [user?.uid]); // Only depend on user.uid
-
-  const handleApproveApplication = (appId) => {
-    // TODO: Update application status in Firestore
-    console.log('Approve application:', appId);
-    setApplications(prev => prev.filter(app => app.id !== appId));
+  const loadOrganizationData = async () => {
+    try {
+      await Promise.all([
+        loadFollowers(),
+        loadApplications()
+      ]);
+    } catch (error) {
+      console.error('Error loading organization data:', error);
+      Alert.alert('Error', 'Failed to load volunteer data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRejectApplication = (appId) => {
-    // TODO: Update application status in Firestore
-    console.log('Reject application:', appId);
-    setApplications(prev => prev.filter(app => app.id !== appId));
+  const loadFollowers = async () => {
+    try {
+      console.log('Loading followers for organization:', user.uid);
+      
+      const followersData = await FollowersManager.getOrganizationFollowers(user.uid);
+      setFollowers(followersData);
+      
+      const stats = await FollowersManager.getFollowerStats(user.uid);
+      setFollowerStats(stats);
+      
+      console.log(`Loaded ${followersData.length} followers`);
+      
+    } catch (error) {
+      console.error('Error loading followers:', error);
+      setFollowers([]);
+      setFollowerStats(null);
+    }
+  };
+
+  const loadApplications = async () => {
+    try {
+      console.log('Loading applications for organization:', user.uid);
+      
+      const eventsQuery = query(
+        collection(db, 'events'), 
+        where('organizationId', '==', user.uid)
+      );
+      
+      const eventsSnapshot = await getDocs(eventsQuery);
+      const allApplications = [];
+      
+      for (const eventDoc of eventsSnapshot.docs) {
+        const eventId = eventDoc.id;
+        const eventData = eventDoc.data();
+        const eventTitle = eventData.title;
+        
+        try {
+          const applicationsQuery = collection(db, 'events', eventId, 'applications');
+          const applicationsSnapshot = await getDocs(applicationsQuery);
+          
+          const eventApplications = [];
+          applicationsSnapshot.forEach(appDoc => {
+            const appData = appDoc.data();
+            eventApplications.push({
+              id: appDoc.id,
+              ...appData,
+              eventName: eventTitle,
+              eventId: eventId,
+            });
+          });
+          
+          if (eventApplications.length > 0) {
+            allApplications.push({
+              eventId: eventId,
+              eventName: eventTitle,
+              applications: eventApplications,
+              applicationCount: eventApplications.length,
+            });
+          }
+          
+        } catch (error) {
+          console.error(`Error loading applications for event ${eventId}:`, error);
+        }
+      }
+      
+      allApplications.sort((a, b) => a.eventName.localeCompare(b.eventName));
+      
+      setApplications(allApplications);
+      console.log(`Loaded applications for ${allApplications.length} events`);
+      
+    } catch (error) {
+      console.error('Error loading applications:', error);
+      setApplications([]);
+    }
+  };
+
+  const handleApproveApplication = async (appId, eventId) => {
+    try {
+      const appRef = doc(db, 'events', eventId, 'applications', appId);
+      await updateDoc(appRef, {
+        status: 'approved',
+        approvedAt: new Date(),
+        approvedBy: user.uid,
+      });
+      
+      await loadApplications();
+      Alert.alert('Success', 'Application approved successfully');
+      
+    } catch (error) {
+      console.error('Error approving application:', error);
+      Alert.alert('Error', 'Failed to approve application');
+    }
+  };
+
+  const handleRejectApplication = async (appId, eventId) => {
+    try {
+      const appRef = doc(db, 'events', eventId, 'applications', appId);
+      await updateDoc(appRef, {
+        status: 'rejected',
+        rejectedAt: new Date(),
+        rejectedBy: user.uid,
+      });
+      
+      await loadApplications();
+      Alert.alert('Success', 'Application rejected successfully');
+      
+    } catch (error) {
+      console.error('Error rejecting application:', error);
+      Alert.alert('Error', 'Failed to reject application');
+    }
+  };
+
+  const handleRemoveFollower = async (followerId) => {
+    Alert.alert(
+      'Remove Follower',
+      'Are you sure you want to remove this follower?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await FollowersManager.removeFollower(user.uid, followerId);
+              await loadFollowers();
+              Alert.alert('Success', 'Follower removed successfully');
+            } catch (error) {
+              console.error('Error removing follower:', error);
+              Alert.alert('Error', 'Failed to remove follower');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const renderSectionTabs = () => (
     <View style={styles.tabsContainer}>
-      {SECTIONS.map((section) => (
-        <TouchableOpacity
-          key={section}
-          style={[
-            styles.tab,
-            selectedSection === section && styles.activeTab,
-          ]}
-          onPress={() => setSelectedSection(section)}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              selectedSection === section && styles.activeTabText,
-            ]}
-          >
-            {section.split(' ')[0]} {/* Show first word to save space */}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+      {SECTIONS.map((section) => {
+        let count = 0;
+        switch (section) {
+          case 'Applications':
+            count = applications.reduce((total, eventGroup) => total + eventGroup.applications.length, 0);
+            break;
+          case 'Followers':
+            count = followers.length;
+            break;
+        }
 
-  const renderVolunteerCard = ({ item }) => (
-    <View style={styles.volunteerCard}>
-      <Image
-        source={{ uri: item.photoURL || 'https://via.placeholder.com/50' }}
-        style={styles.avatar}
-      />
-      <View style={styles.volunteerInfo}>
-        <Text style={styles.volunteerName}>
-          {item.displayName || item.name || 'Unknown'}
-        </Text>
-        <Text style={styles.volunteerDetails}>
-          {item.eventsAttended || 0} events • {item.hours || 0} hours
-        </Text>
-      </View>
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={styles.messageButton}
-          onPress={() => navigation.navigate('SendMessage', { volunteerId: item.id })}
-        >
-          <Ionicons name="chatbubble-outline" size={20} color="#4e8cff" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.profileButton}
-          onPress={() => navigation.navigate('VolunteerProfile', { volunteerId: item.id })}
-        >
-          <Ionicons name="person-outline" size={20} color="#666" />
-        </TouchableOpacity>
-      </View>
+        return (
+          <TouchableOpacity
+            key={section}
+            style={[
+              styles.tab,
+              selectedSection === section && styles.activeTab,
+            ]}
+            onPress={() => setSelectedSection(section)}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                selectedSection === section && styles.activeTabText,
+              ]}
+            >
+              {section}
+            </Text>
+            {count > 0 && (
+              <View style={[
+                styles.tabBadge,
+                selectedSection === section && styles.activeTabBadge
+              ]}>
+                <Text style={[
+                  styles.tabBadgeText,
+                  selectedSection === section && styles.activeTabBadgeText
+                ]}>
+                  {count}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 
   const renderApplicationCard = ({ item }) => (
     <View style={styles.applicationCard}>
-      <View style={styles.applicationInfo}>
-        <Text style={styles.volunteerName}>{item.volunteerName}</Text>
-        <Text style={styles.eventName}>Applied for: {item.eventName}</Text>
-        <Text style={styles.applicationDate}>
-          {new Date(item.createdAt.seconds * 1000).toLocaleDateString()}
-        </Text>
+      <View style={styles.applicationHeader}>
+        <View style={styles.applicationInfo}>
+          <Text style={styles.volunteerName}>{item.volunteerName || 'Unknown Volunteer'}</Text>
+          <Text style={styles.volunteerEmail}>{item.volunteerEmail || ''}</Text>
+        </View>
+        <View style={[
+          styles.applicationStatusBadge,
+          { backgroundColor: getApplicationStatusColor(item.status) }
+        ]}>
+          <Text style={styles.applicationStatusText}>
+            {(item.status || 'pending').charAt(0).toUpperCase() + (item.status || 'pending').slice(1)}
+          </Text>
+        </View>
       </View>
-      <View style={styles.applicationActions}>
-        <TouchableOpacity
-          style={styles.approveButton}
-          onPress={() => handleApproveApplication(item.id)}
-        >
-          <Ionicons name="checkmark" size={18} color="#4CAF50" />
-          <Text style={styles.approveText}>Approve</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.rejectButton}
-          onPress={() => handleRejectApplication(item.id)}
-        >
-          <Ionicons name="close" size={18} color="#E74C3C" />
-          <Text style={styles.rejectText}>Reject</Text>
-        </TouchableOpacity>
-      </View>
+      
+      <Text style={styles.applicationDate}>
+        Applied: {item.createdAt?.seconds 
+          ? new Date(item.createdAt.seconds * 1000).toLocaleDateString()
+          : item.createdAt?.toDate
+          ? item.createdAt.toDate().toLocaleDateString()
+          : 'Unknown date'
+        }
+      </Text>
+      
+      {item.message && (
+        <View style={styles.messageContainer}>
+          <Text style={styles.messageLabel}>Message:</Text>
+          <Text style={styles.applicationMessage}>{item.message}</Text>
+        </View>
+      )}
+      
+      {(!item.status || item.status === 'pending') && (
+        <View style={styles.applicationActions}>
+          <TouchableOpacity
+            style={styles.approveButton}
+            onPress={() => handleApproveApplication(item.id, item.eventId)}
+          >
+            <Ionicons name="checkmark-circle" size={16} color="#fff" />
+            <Text style={styles.approveText}>Approve</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.rejectButton}
+            onPress={() => handleRejectApplication(item.id, item.eventId)}
+          >
+            <Ionicons name="close-circle" size={16} color="#fff" />
+            <Text style={styles.rejectText}>Reject</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
+
+  const getApplicationStatusColor = (status) => {
+    switch (status) {
+      case 'approved': return '#10B981';
+      case 'rejected': return '#EF4444';
+      case 'pending':
+      default: return '#F59E0B';
+    }
+  };
 
   const renderFollowerCard = ({ item }) => (
     <View style={styles.followerCard}>
@@ -215,27 +309,69 @@ export default function VolunteersTab({ navigation }) {
         <Text style={styles.followerName}>
           {item.displayName || item.name || 'Follower'}
         </Text>
-        <Text style={styles.followerStatus}>Following since 2024</Text>
+        <Text style={styles.followerRole}>
+          {item.role === 'volunteer' ? 'Volunteer' : 'User'}
+        </Text>
+        {item.location && (
+          <View style={styles.locationContainer}>
+            <Ionicons name="location-outline" size={12} color="#6B7280" />
+            <Text style={styles.followerLocation}>{item.location}</Text>
+          </View>
+        )}
+        {item.skills && item.skills.length > 0 && (
+          <View style={styles.skillsContainer}>
+            <Text style={styles.skillsLabel}>Skills:</Text>
+            <Text style={styles.followerSkills} numberOfLines={1}>
+              {item.skills.slice(0, 3).join(', ')}
+              {item.skills.length > 3 && '...'}
+            </Text>
+          </View>
+        )}
       </View>
-      <TouchableOpacity
-        style={styles.messageButton}
-        onPress={() => navigation.navigate('SendMessage', { userId: item.id })}
-      >
-        <Ionicons name="mail-outline" size={20} color="#4e8cff" />
-      </TouchableOpacity>
+      <View style={styles.followerActions}>
+        <TouchableOpacity
+          style={styles.messageButton}
+          onPress={() => navigation.navigate('SendMessage', { userId: item.id })}
+        >
+          <Ionicons name="mail-outline" size={18} color="#6366F1" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.removeButton}
+          onPress={() => handleRemoveFollower(item.id)}
+        >
+          <Ionicons name="person-remove-outline" size={18} color="#EF4444" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderEventApplicationsGroup = ({ item }) => (
+    <View style={styles.eventApplicationsGroup}>
+      <View style={styles.eventApplicationsHeader}>
+        <View style={styles.eventHeaderLeft}>
+          <Text style={styles.eventApplicationsTitle}>{item.eventName}</Text>
+          <View style={styles.applicationCountBadge}>
+            <Text style={styles.applicationCountText}>{item.applicationCount}</Text>
+          </View>
+        </View>
+      </View>
+      <FlatList
+        data={item.applications}
+        keyExtractor={(app) => app.id}
+        renderItem={renderApplicationCard}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={false}
+        ItemSeparatorComponent={() => <View style={styles.applicationSeparator} />}
+      />
     </View>
   );
 
   const getCurrentData = () => {
     switch (selectedSection) {
-      case 'Active Volunteers':
-        return activeVolunteers;
       case 'Followers':
         return followers;
       case 'Applications':
         return applications;
-      case 'Top Volunteers':
-        return topVolunteers;
       default:
         return [];
     }
@@ -243,29 +379,21 @@ export default function VolunteersTab({ navigation }) {
 
   const getCurrentRenderItem = () => {
     switch (selectedSection) {
-      case 'Active Volunteers':
-        return renderVolunteerCard;
       case 'Followers':
         return renderFollowerCard;
       case 'Applications':
-        return renderApplicationCard;
-      case 'Top Volunteers':
-        return renderVolunteerCard;
+        return renderEventApplicationsGroup;
       default:
-        return renderVolunteerCard;
+        return renderFollowerCard;
     }
   };
 
   const getEmptyMessage = () => {
     switch (selectedSection) {
-      case 'Active Volunteers':
-        return 'No active volunteers at the moment';
       case 'Followers':
-        return 'No followers yet';
+        return 'No followers yet. Share your organization to gain followers!';
       case 'Applications':
-        return 'No pending applications';
-      case 'Top Volunteers':
-        return 'No top volunteers to show';
+        return 'No applications yet. Create events to receive applications!';
       default:
         return 'No data available';
     }
@@ -274,7 +402,7 @@ export default function VolunteersTab({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4e8cff" />
+        <ActivityIndicator size="large" color="#6366F1" />
         <Text style={styles.loadingText}>Loading volunteers...</Text>
       </View>
     );
@@ -286,6 +414,24 @@ export default function VolunteersTab({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Volunteers</Text>
         <Text style={styles.headerSubtitle}>Manage your volunteer community</Text>
+        
+        {/* Follower Stats */}
+        {followerStats && selectedSection === 'Followers' && (
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{followerStats.totalFollowers}</Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{followerStats.volunteerFollowers}</Text>
+              <Text style={styles.statLabel}>Volunteers</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{followerStats.recentFollowers}</Text>
+              <Text style={styles.statLabel}>Recent</Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Section Tabs */}
@@ -294,13 +440,18 @@ export default function VolunteersTab({ navigation }) {
       {/* Content */}
       <FlatList
         data={getCurrentData()}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => selectedSection === 'Applications' ? item.eventId : item.id}
         renderItem={getCurrentRenderItem()}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="people-outline" size={64} color="#ccc" />
+            <Ionicons 
+              name={selectedSection === 'Applications' ? 'document-text-outline' : 'people-outline'} 
+              size={48} 
+              color="#D1D5DB" 
+            />
             <Text style={styles.emptyText}>{getEmptyMessage()}</Text>
           </View>
         }
@@ -312,7 +463,7 @@ export default function VolunteersTab({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F9FAFB',
   },
 
   // Loading
@@ -320,183 +471,234 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: '#6B7280',
+    fontWeight: '500',
   },
 
   // Header
   header: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2B2B2B',
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#111827',
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#6B7280',
     marginTop: 4,
+    fontWeight: '400',
+  },
+
+  // Stats Container
+  statsContainer: {
+    flexDirection: 'row',
+    marginTop: 20,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 16,
+    padding: 20,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#6366F1',
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 4,
+    fontWeight: '500',
   },
 
   // Tabs
   tabsContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingHorizontal: 15,
-    paddingBottom: 14,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: '#E5E7EB',
   },
   tab: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-    marginHorizontal: 2,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 4,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   activeTab: {
-    backgroundColor: '#4e8cff',
+    backgroundColor: '#6366F1',
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: '#6B7280',
   },
   activeTabText: {
-    color: '#fff',
+    color: '#FFFFFF',
+  },
+  tabBadge: {
+    backgroundColor: '#D1D5DB',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 8,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  activeTabBadge: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  tabBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  activeTabBadgeText: {
+    color: '#FFFFFF',
   },
 
   // List
   listContainer: {
-    padding: 16,
+    padding: 24,
+  },
+  itemSeparator: {
+    height: 16,
   },
 
-  // Volunteer Card
-  volunteerCard: {
+  // Application Card
+  applicationCard: {
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  applicationHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 14,
-    borderRadius: 10,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
   },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 16,
-  },
-  volunteerInfo: {
+  applicationInfo: {
     flex: 1,
   },
   volunteerName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2B2B2B',
+    color: '#111827',
   },
-  volunteerDetails: {
+  volunteerEmail: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+    color: '#6B7280',
+    marginTop: 2,
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  messageButton: {
-    padding: 8,
+  applicationStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: 20,
-    backgroundColor: '#E3F2FD',
+    marginLeft: 12,
   },
-  profileButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#F5F5F5',
-  },
-
-  // Application Card
-  applicationCard: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  applicationInfo: {
-    marginBottom: 12,
-  },
-  eventName: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+  applicationStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   applicationDate: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 12,
+  },
+  messageContainer: {
+    backgroundColor: '#F9FAFB',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  messageLabel: {
     fontSize: 12,
-    color: '#999',
-    marginTop: 2,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  applicationMessage: {
+    fontSize: 14,
+    color: '#111827',
+    lineHeight: 20,
   },
   applicationActions: {
     flexDirection: 'row',
     gap: 12,
   },
   approveButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E8F5E8',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 6,
   },
   approveText: {
-    color: '#4CAF50',
+    color: '#FFFFFF',
     fontWeight: '600',
-    marginLeft: 4,
+    fontSize: 14,
   },
   rejectButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 6,
   },
   rejectText: {
-    color: '#E74C3C',
+    color: '#FFFFFF',
     fontWeight: '600',
-    marginLeft: 4,
+    fontSize: 14,
+  },
+  applicationSeparator: {
+    height: 12,
   },
 
   // Follower Card
   followerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 16,
   },
   followerInfo: {
     flex: 1,
@@ -504,23 +706,102 @@ const styles = StyleSheet.create({
   followerName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2B2B2B',
+    color: '#111827',
   },
-  followerStatus: {
+  followerRole: {
     fontSize: 14,
-    color: '#666',
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
+  },
+  followerLocation: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  skillsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  skillsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+    marginRight: 4,
+  },
+  followerSkills: {
+    fontSize: 12,
+    color: '#6366F1',
+    flex: 1,
+  },
+  followerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  messageButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#EEF2FF',
+  },
+  removeButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+  },
+
+  // Event Applications Group
+  eventApplicationsGroup: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  eventApplicationsHeader: {
+    marginBottom: 16,
+  },
+  eventHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  eventApplicationsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    flex: 1,
+  },
+  applicationCountBadge: {
+    backgroundColor: '#6366F1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginLeft: 12,
+  },
+  applicationCountText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
   // Empty State
   emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
   },
   emptyText: {
     fontSize: 16,
-    color: '#666',
-    marginTop: 16,
+    color: '#6B7280',
     textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 24,
+    fontWeight: '500',
   },
 });
+

@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   arrayRemove,
   arrayUnion,
+  collection,
   doc,
   getDoc,
   onSnapshot,
@@ -16,9 +17,11 @@ import {
   Alert,
   Dimensions,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
@@ -42,21 +45,19 @@ const localCategoryImages = {
 
 // Function to get the correct image source based on event data
 const getImageSource = (event) => {
-  // If has custom image uploaded to Firebase
-if (event?.hasCustomImage && event.imageUrl) {
-  return { uri: event.imageUrl };
-}
+  if (event.hasCustomImage && event.imageUrl) {
+    return { uri: event.imageUrl };
+  }
   
   // Use local default based on category
   if (event?.category && localCategoryImages[event.category]) {
     return localCategoryImages[event.category];
   }
   
-  // Fallback to a default local image
   return localCategoryImages.environment;
 };
 
-// IMPROVED: Helper function to ensure user document exists
+// Helper function to ensure user document exists
 const ensureUserDocumentExists = async (userId, userData = {}) => {
   try {
     const userRef = doc(db, 'users', userId);
@@ -65,14 +66,13 @@ const ensureUserDocumentExists = async (userId, userData = {}) => {
     if (!userDoc.exists()) {
       console.log('User document does not exist, creating it...');
       
-      // Create user document with default structure
       const defaultUserData = {
         uid: userId,
         registeredEvents: [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        role: 'volunteer', // Default role
-        ...userData // Merge any additional user data
+        role: 'volunteer',
+        ...userData
       };
       
       await setDoc(userRef, defaultUserData);
@@ -87,7 +87,7 @@ const ensureUserDocumentExists = async (userId, userData = {}) => {
   }
 };
 
-// IMPROVED: Helper function to ensure chat room exists with proper structure
+// Helper function to ensure chat room exists
 const ensureChatRoomExists = async (eventId, eventData, userId, isOrganizer = false) => {
   try {
     const chatRoomId = `event_${eventId}`;
@@ -97,102 +97,67 @@ const ensureChatRoomExists = async (eventId, eventData, userId, isOrganizer = fa
     if (!chatRoomDoc.exists()) {
       console.log('Chat room does not exist, creating it...');
       
-      // Determine initial participants
-      const initialParticipants = [userId];
-      
-      // Include organization in participants for moderation
-      if (eventData.organizationId && eventData.organizationId !== userId) {
-        initialParticipants.push(eventData.organizationId);
-      }
+      const initialParticipants = isOrganizer 
+        ? [userId, eventData.organizationId].filter((id, index, arr) => arr.indexOf(id) === index)
+        : [userId];
       
       const chatRoomData = {
         eventId: eventId,
-        isEventChat: true,
+        eventTitle: eventData.title,
         participants: initialParticipants,
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        lastMessage: '',
-        lastMessageTime: null,
+        createdBy: userId,
+        isEventChat: true,
+        organizationId: eventData.organizationId,
       };
       
       await setDoc(chatRoomRef, chatRoomData);
-      console.log('Chat room created successfully with participants:', initialParticipants);
-      return true;
+      console.log('Chat room created successfully');
     } else {
-      // Chat room exists, ensure user is in participants if they should be
-      const currentParticipants = chatRoomDoc.data().participants || [];
-      if (!currentParticipants.includes(userId)) {
+      const chatData = chatRoomDoc.data();
+      if (!chatData.participants.includes(userId)) {
         await updateDoc(chatRoomRef, {
           participants: arrayUnion(userId),
           updatedAt: serverTimestamp(),
         });
-        console.log('User added to existing chat participants');
+        console.log('User added to existing chat room');
       }
-      return true;
     }
+    
+    return true;
   } catch (error) {
     console.error('Error ensuring chat room exists:', error);
-    // Don't throw error for chat room issues - registration should still work
-    return false;
+    throw new Error(`Failed to setup chat room: ${error.message}`);
   }
 };
 
 export default function EventDetailsScreen({ route, navigation }) {
-  const { user } = useAppContext();
-  const { event: initialEvent, isOrganization = false } = route.params;
+  const { event: initialEvent, isOrganization } = route.params;
+  const { user, userRole } = useAppContext();
   
   const [event, setEvent] = useState(initialEvent);
-  const [loading, setLoading] = useState(false);
-  const [registering, setRegistering] = useState(false);
   const [organization, setOrganization] = useState(null);
-  const [userRole, setUserRole] = useState(null);
+  const [registering, setRegistering] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applicationModalVisible, setApplicationModalVisible] = useState(false);
+  const [applicationMessage, setApplicationMessage] = useState('');
+  const [userApplication, setUserApplication] = useState(null);
+  const [loadingApplication, setLoadingApplication] = useState(false);
 
-  // Check if current user is the organization that created this event
-  const isEventCreator = user?.uid === event?.organizationId;
-  
-  // Check if user is already registered
-  const isRegistered = event?.registeredVolunteers?.includes(user?.uid);
-  
-  // Check if event is full
-  const isFull = event?.registeredVolunteers?.length >= event?.maxVolunteers;
-  
-  // Check if event has passed
-  const eventDate = event?.date?.toDate ? event.date.toDate() : new Date(event?.date);
+  // Computed values
+  const eventDate = event.date?.toDate ? event.date.toDate() : new Date(event.date);
+  const isRegistered = event.registeredVolunteers?.includes(user?.uid) || false;
+  const isEventCreator = event.organizationId === user?.uid;
   const isPastEvent = eventDate < new Date();
+  const isFull = event.registeredVolunteers?.length >= event.maxVolunteers;
+  const participantCount = event.registeredVolunteers?.length || 0;
 
+  // Load organization data
   useEffect(() => {
-    // Determine user role
-    const determineUserRole = async () => {
-      try {
-        // First ensure user document exists
-        await ensureUserDocumentExists(user.uid, {
-          displayName: user.displayName,
-          email: user.email,
-          photoURL: user.photoURL,
-        });
-        
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          setUserRole(userDoc.data().role);
-        }
-      } catch (error) {
-        console.error('Error determining user role:', error);
-        // Set default role if there's an error
-        setUserRole('volunteer');
-      }
-    };
-
-    if (user?.uid) {
-      determineUserRole();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    // Load organization data
     const loadOrganization = async () => {
       if (event?.organizationId) {
         try {
-          const orgDoc = await getDoc(doc(db, 'organizations', event.organizationId));
+          const orgDoc = await getDoc(doc(db, 'users', event.organizationId));
           if (orgDoc.exists()) {
             setOrganization(orgDoc.data());
           }
@@ -205,8 +170,8 @@ export default function EventDetailsScreen({ route, navigation }) {
     loadOrganization();
   }, [event?.organizationId]);
 
+  // Set up real-time listener for event updates
   useEffect(() => {
-    // Set up real-time listener for event updates
     if (event?.id) {
       const unsubscribe = onSnapshot(
         doc(db, 'events', event.id),
@@ -225,28 +190,155 @@ export default function EventDetailsScreen({ route, navigation }) {
     }
   }, [event?.id]);
 
-  // IMPROVED: Comprehensive registration/unregistration with error handling
+  // Load user's application status
+  useEffect(() => {
+    const loadUserApplication = async () => {
+      if (!user?.uid || !event?.id || userRole === 'organization') {
+        return;
+      }
+
+      setLoadingApplication(true);
+      try {
+        // Check if user has applied to this event
+        const applicationsRef = collection(db, 'events', event.id, 'applications');
+        const userApplicationDoc = await getDoc(doc(applicationsRef, user.uid));
+        
+        if (userApplicationDoc.exists()) {
+          setUserApplication(userApplicationDoc.data());
+        } else {
+          setUserApplication(null);
+        }
+      } catch (error) {
+        console.error('Error loading user application:', error);
+      } finally {
+        setLoadingApplication(false);
+      }
+    };
+
+    loadUserApplication();
+  }, [user?.uid, event?.id, userRole]);
+
+  // Handle event application
+  const handleApplyToEvent = async () => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please log in to apply for events.');
+      return;
+    }
+
+    if (isEventCreator) {
+      Alert.alert('Cannot Apply', 'Organizations cannot apply to their own events.');
+      return;
+    }
+
+    if (userRole === 'organization') {
+      Alert.alert('Application Not Allowed', 'Organizations cannot apply to events. Only volunteers can apply.');
+      return;
+    }
+
+    if (isPastEvent) {
+      Alert.alert('Event Passed', 'This event has already occurred.');
+      return;
+    }
+
+    if (userApplication) {
+      Alert.alert('Already Applied', `You have already applied to this event. Status: ${userApplication.status}`);
+      return;
+    }
+
+    // Show application modal
+    setApplicationModalVisible(true);
+  };
+
+  // Submit application
+  const submitApplication = async () => {
+    if (!applicationMessage.trim()) {
+      Alert.alert('Message Required', 'Please provide a message with your application.');
+      return;
+    }
+
+    setApplying(true);
+    try {
+      await ensureUserDocumentExists(user.uid, {
+        displayName: user.displayName,
+        email: user.email,
+        photoURL: user.photoURL,
+      });
+
+      // Create application document
+      const applicationData = {
+        volunteerId: user.uid,
+        volunteerName: user.displayName || 'Unknown Volunteer',
+        volunteerEmail: user.email || '',
+        eventId: event.id,
+        eventTitle: event.title,
+        message: applicationMessage.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // Add application to event's applications subcollection
+      const applicationsRef = collection(db, 'events', event.id, 'applications');
+      await setDoc(doc(applicationsRef, user.uid), applicationData);
+
+      setUserApplication(applicationData);
+      setApplicationModalVisible(false);
+      setApplicationMessage('');
+      
+      Alert.alert('Success', 'Your application has been submitted successfully!');
+    } catch (error) {
+      console.error('Error submitting application:', error);
+      Alert.alert('Error', 'Failed to submit application. Please try again.');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  // Withdraw application
+  const handleWithdrawApplication = () => {
+    Alert.alert(
+      'Withdraw Application',
+      'Are you sure you want to withdraw your application?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Withdraw',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const applicationsRef = collection(db, 'events', event.id, 'applications');
+              await updateDoc(doc(applicationsRef, user.uid), {
+                status: 'withdrawn',
+                withdrawnAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+
+              setUserApplication(prev => ({ ...prev, status: 'withdrawn' }));
+              Alert.alert('Success', 'Application withdrawn successfully.');
+            } catch (error) {
+              console.error('Error withdrawing application:', error);
+              Alert.alert('Error', 'Failed to withdraw application.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle registration (existing functionality)
   const handleRegister = async () => {
     if (!user) {
       Alert.alert('Authentication Required', 'Please log in to register for events.');
       return;
     }
 
-    // Prevent organizations from registering for their own events
     if (isEventCreator) {
-      Alert.alert(
-        'Cannot Register', 
-        'Organizations cannot register for their own events. You are the creator of this event.'
-      );
+      Alert.alert('Cannot Register', 'Organizations cannot register for their own events.');
       return;
     }
 
-    // Prevent organizations from registering for any events
     if (userRole === 'organization') {
-      Alert.alert(
-        'Registration Not Allowed', 
-        'Organizations cannot register for events. Only volunteers can participate in events.'
-      );
+      Alert.alert('Registration Not Allowed', 'Organizations cannot register for events.');
       return;
     }
 
@@ -263,91 +355,66 @@ export default function EventDetailsScreen({ route, navigation }) {
     setRegistering(true);
 
     try {
-      console.log(`Starting ${isRegistered ? 'unregistration' : 'registration'} process...`);
-      
-      // STEP 1: Ensure user document exists before any operations
       await ensureUserDocumentExists(user.uid, {
         displayName: user.displayName,
         email: user.email,
         photoURL: user.photoURL,
       });
 
-      // STEP 2: Prepare batch operations
       const batch = writeBatch(db);
-      
       const eventRef = doc(db, 'events', event.id);
       const userRef = doc(db, 'users', user.uid);
       
       if (isRegistered) {
-        // UNREGISTER PROCESS
-        console.log('Processing unregistration...');
-        
-        // Remove from event registrations
+        // Unregister
         batch.update(eventRef, {
           registeredVolunteers: arrayRemove(user.uid),
           updatedAt: serverTimestamp(),
         });
 
-        // Remove from user's registered events
         batch.update(userRef, {
           registeredEvents: arrayRemove(event.id),
           updatedAt: serverTimestamp(),
         });
 
-        // Handle chat room participant removal
         if (event.withChat) {
           try {
             const chatRoomId = `event_${event.id}`;
             const chatRoomRef = doc(db, 'chatRooms', chatRoomId);
-            
             const chatRoomDoc = await getDoc(chatRoomRef);
             if (chatRoomDoc.exists()) {
               batch.update(chatRoomRef, {
                 participants: arrayRemove(user.uid),
                 updatedAt: serverTimestamp(),
               });
-              console.log('User will be removed from chat participants');
             }
           } catch (chatError) {
-            console.warn('Chat removal preparation failed:', chatError);
-            // Continue with unregistration even if chat update fails
+            console.warn('Chat removal failed:', chatError);
           }
         }
 
-        // Execute batch operations
         await batch.commit();
-        console.log('Unregistration completed successfully');
-        
         Alert.alert('Success', 'You have been unregistered from this event.');
         
       } else {
-        // REGISTER PROCESS
-        console.log('Processing registration...');
-        
-        // Add to event registrations
+        // Register
         batch.update(eventRef, {
           registeredVolunteers: arrayUnion(user.uid),
           updatedAt: serverTimestamp(),
         });
 
-        // Add to user's registered events
         batch.update(userRef, {
           registeredEvents: arrayUnion(event.id),
           updatedAt: serverTimestamp(),
         });
 
-        // Execute main batch operations first
         await batch.commit();
-        console.log('Registration completed successfully');
 
-        // STEP 3: Handle chat room setup separately (non-critical)
         if (event.withChat) {
           try {
             await ensureChatRoomExists(event.id, event, user.uid, false);
-            console.log('Chat room setup completed');
           } catch (chatError) {
             console.warn('Chat room setup failed:', chatError);
-            // Don't fail registration for chat issues
           }
         }
         
@@ -355,32 +422,14 @@ export default function EventDetailsScreen({ route, navigation }) {
       }
       
     } catch (error) {
-      console.error('Registration/Unregistration error:', error);
-      
-      // Provide specific error messages based on error type
-      let errorMessage = 'An unexpected error occurred. Please try again.';
-      
-      if (error.code === 'permission-denied') {
-        errorMessage = 'You do not have permission to perform this action. Please check your account status.';
-      } else if (error.code === 'not-found') {
-        errorMessage = 'Event not found. It may have been deleted.';
-      } else if (error.code === 'unavailable') {
-        errorMessage = 'Service temporarily unavailable. Please check your internet connection and try again.';
-      } else if (error.code === 'deadline-exceeded') {
-        errorMessage = 'Request timed out. Please try again.';
-      } else if (error.message.includes('user document')) {
-        errorMessage = 'There was an issue with your user profile. Please try logging out and back in.';
-      } else if (error.message.includes('network')) {
-        errorMessage = 'Network error. Please check your internet connection.';
-      }
-      
-      Alert.alert('Registration Error', errorMessage);
+      console.error('Registration error:', error);
+      Alert.alert('Registration Error', 'An error occurred. Please try again.');
     } finally {
       setRegistering(false);
     }
   };
 
-  // IMPROVED: Enhanced chat access with comprehensive error handling
+  // Handle chat access
   const handleChatAccess = async () => {
     if (!event.withChat) {
       Alert.alert('No Chat', 'This event does not have a chat room.');
@@ -388,18 +437,13 @@ export default function EventDetailsScreen({ route, navigation }) {
     }
 
     try {
-      // Allow event creators (organizations) to access chat for moderation
       if (isEventCreator) {
-        console.log('Event creator accessing chat for moderation');
-        
-        // Ensure user document exists
         await ensureUserDocumentExists(user.uid, {
           displayName: user.displayName,
           email: user.email,
           photoURL: user.photoURL,
         });
         
-        // Ensure chat room exists for organization access
         await ensureChatRoomExists(event.id, event, user.uid, true);
         
         navigation.navigate('Chat', {
@@ -412,7 +456,6 @@ export default function EventDetailsScreen({ route, navigation }) {
         return;
       }
 
-      // For volunteers, check if they are registered
       if (!isRegistered) {
         Alert.alert(
           'Registration Required', 
@@ -429,17 +472,12 @@ export default function EventDetailsScreen({ route, navigation }) {
         return;
       }
 
-      // Volunteer is registered, ensure they have chat access
-      console.log('Registered volunteer accessing chat');
-      
-      // Ensure user document exists
       await ensureUserDocumentExists(user.uid, {
         displayName: user.displayName,
         email: user.email,
         photoURL: user.photoURL,
       });
       
-      // Ensure chat room exists and user has access
       await ensureChatRoomExists(event.id, event, user.uid, false);
 
       navigation.navigate('Chat', {
@@ -452,19 +490,51 @@ export default function EventDetailsScreen({ route, navigation }) {
 
     } catch (error) {
       console.error('Error accessing chat:', error);
-      
-      let errorMessage = 'Failed to access chat. Please try again.';
-      
-      if (error.code === 'permission-denied') {
-        errorMessage = 'You do not have permission to access this chat.';
-      } else if (error.code === 'not-found') {
-        errorMessage = 'Chat room not found. Please try registering for the event again.';
-      } else if (error.code === 'unavailable') {
-        errorMessage = 'Chat service temporarily unavailable. Please try again later.';
-      }
-      
-      Alert.alert('Chat Access Error', errorMessage);
+      Alert.alert('Chat Access Error', 'Failed to access chat. Please try again.');
     }
+  };
+
+  // Get application button text and style
+  const getApplicationButtonText = () => {
+    if (loadingApplication) return 'Loading...';
+    if (applying) return 'Submitting...';
+    if (isEventCreator) return 'You Created This Event';
+    if (userRole === 'organization') return 'Organizations Cannot Apply';
+    if (isPastEvent) return 'Event Has Passed';
+    
+    if (userApplication) {
+      switch (userApplication.status) {
+        case 'pending': return 'Application Pending';
+        case 'approved': return 'Application Approved';
+        case 'rejected': return 'Application Rejected';
+        case 'withdrawn': return 'Application Withdrawn';
+        default: return 'Applied';
+      }
+    }
+    
+    return 'Apply to Event';
+  };
+
+  const getApplicationButtonStyle = () => {
+    if (isEventCreator || userRole === 'organization' || isPastEvent) {
+      return [styles.applyButton, styles.applyButtonDisabled];
+    }
+    
+    if (userApplication) {
+      switch (userApplication.status) {
+        case 'pending': return [styles.applyButton, styles.applyButtonPending];
+        case 'approved': return [styles.applyButton, styles.applyButtonApproved];
+        case 'rejected': return [styles.applyButton, styles.applyButtonRejected];
+        case 'withdrawn': return [styles.applyButton, styles.applyButtonWithdrawn];
+        default: return [styles.applyButton, styles.applyButtonDisabled];
+      }
+    }
+    
+    return [styles.applyButton, styles.applyButtonActive];
+  };
+
+  const isApplicationDisabled = () => {
+    return isEventCreator || userRole === 'organization' || isPastEvent || applying || loadingApplication || (userApplication && userApplication.status !== 'withdrawn');
   };
 
   const getRegistrationButtonText = () => {
@@ -511,41 +581,6 @@ export default function EventDetailsScreen({ route, navigation }) {
     return isEventCreator || userRole === 'organization' || isPastEvent || (isFull && !isRegistered) || registering;
   };
 
-  const getChatButtonText = () => {
-    if (!event.withChat) {
-      return 'No Chat Available';
-    }
-    
-    if (isEventCreator) {
-      return 'Manage Chat';
-    }
-    
-    if (!isRegistered) {
-      return 'Register to Chat';
-    }
-    
-    return 'Join Chat';
-  };
-
-  const getChatButtonStyle = () => {
-    if (!event.withChat) {
-      return [styles.chatButton, styles.chatButtonDisabled];
-    }
-    
-    if (isEventCreator || isRegistered) {
-      return [styles.chatButton, styles.chatButtonActive];
-    }
-    
-    return [styles.chatButton, styles.chatButtonSecondary];
-  };
-
-  const isChatDisabled = () => {
-    return !event.withChat;
-  };
-
-  // Rest of the component remains the same...
-  // (Include all the existing render logic, styles, etc.)
-  
   return (
     <ScrollView style={styles.container}>
       {/* Event Image */}
@@ -565,11 +600,11 @@ export default function EventDetailsScreen({ route, navigation }) {
           <Text style={styles.title}>{event.title}</Text>
           <View style={styles.organizationInfo}>
             <Image
-              source={{ uri: organization?.logo || 'https://via.placeholder.com/40' }}
+              source={{ uri: organization?.photoURL || 'https://via.placeholder.com/40' }}
               style={styles.organizationLogo}
             />
             <Text style={styles.organizationName}>
-              {organization?.name || event.organizationName || 'Organization'}
+              {organization?.displayName || event.organizationName || 'Organization'}
             </Text>
           </View>
         </Animatable.View>
@@ -607,61 +642,163 @@ export default function EventDetailsScreen({ route, navigation }) {
           <View style={styles.detailRow}>
             <Ionicons name="people-outline" size={20} color="#666" />
             <Text style={styles.detailText}>
-              {event.registeredVolunteers?.length || 0} / {event.maxVolunteers} volunteers
+              {participantCount}/{event.maxVolunteers} volunteers
             </Text>
           </View>
 
-          {event.estimatedHours && (
+          {event.requirements && (
             <View style={styles.detailRow}>
-              <Ionicons name="hourglass-outline" size={20} color="#666" />
-              <Text style={styles.detailText}>{event.estimatedHours} hours</Text>
+              <Ionicons name="list-outline" size={20} color="#666" />
+              <Text style={styles.detailText}>{event.requirements}</Text>
             </View>
           )}
         </Animatable.View>
 
+        {/* Application Status (if user has applied) */}
+        {userApplication && (
+          <Animatable.View animation="fadeInUp" duration={600} delay={600} style={styles.applicationStatusContainer}>
+            <Text style={styles.applicationStatusTitle}>Your Application</Text>
+            <View style={[
+              styles.applicationStatusBadge,
+              { backgroundColor: getApplicationStatusColor(userApplication.status) }
+            ]}>
+              <Text style={styles.applicationStatusText}>
+                {userApplication.status.charAt(0).toUpperCase() + userApplication.status.slice(1)}
+              </Text>
+            </View>
+            {userApplication.message && (
+              <Text style={styles.applicationMessage}>
+                Message: "{userApplication.message}"
+              </Text>
+            )}
+            {userApplication.response && (
+              <Text style={styles.applicationResponse}>
+                Response: "{userApplication.response}"
+              </Text>
+            )}
+            {userApplication.status === 'pending' && (
+              <TouchableOpacity
+                style={styles.withdrawButton}
+                onPress={handleWithdrawApplication}
+              >
+                <Text style={styles.withdrawButtonText}>Withdraw Application</Text>
+              </TouchableOpacity>
+            )}
+          </Animatable.View>
+        )}
+
         {/* Action Buttons */}
-        <Animatable.View animation="fadeInUp" duration={600} delay={600} style={styles.actionsContainer}>
+        <Animatable.View animation="fadeInUp" duration={600} delay={800} style={styles.actionContainer}>
+          {/* Application Button */}
+          <TouchableOpacity
+            style={getApplicationButtonStyle()}
+            onPress={handleApplyToEvent}
+            disabled={isApplicationDisabled()}
+          >
+            <Text style={styles.buttonText}>
+              {getApplicationButtonText()}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Registration Button */}
           <TouchableOpacity
             style={getRegistrationButtonStyle()}
             onPress={handleRegister}
             disabled={isRegistrationDisabled()}
           >
-            {registering && (
-              <ActivityIndicator size="small" color="#fff" style={styles.buttonLoader} />
-            )}
-            <Text style={[
-              styles.registerButtonText,
-              (isEventCreator || userRole === 'organization' || isPastEvent || (isFull && !isRegistered)) && styles.disabledButtonText
-            ]}>
+            <Text style={styles.buttonText}>
               {getRegistrationButtonText()}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={getChatButtonStyle()}
-            onPress={handleChatAccess}
-            disabled={isChatDisabled()}
-          >
-            <Ionicons 
-              name="chatbubble-outline" 
-              size={16} 
-              color={isChatDisabled() ? "#999" : "#fff"} 
-              style={styles.buttonIcon}
-            />
-            <Text style={[
-              styles.chatButtonText,
-              isChatDisabled() && styles.disabledButtonText
-            ]}>
-              {getChatButtonText()}
-            </Text>
-          </TouchableOpacity>
+          {/* Chat Button */}
+          {event.withChat && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={handleChatAccess}
+            >
+              <Ionicons name="chatbubble-outline" size={20} color="#fff" />
+              <Text style={styles.buttonText}>
+                {isEventCreator ? 'Manage Chat' : isRegistered ? 'Join Chat' : 'Register to Chat'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Animatable.View>
       </View>
+
+      {/* Application Modal */}
+      <Modal
+        visible={applicationModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setApplicationModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Apply to Event</Text>
+            <Text style={styles.modalSubtitle}>
+              Tell the organization why you want to participate in this event.
+            </Text>
+            
+            <TextInput
+              style={styles.messageInput}
+              placeholder="Write your application message here..."
+              value={applicationMessage}
+              onChangeText={setApplicationMessage}
+              multiline
+              numberOfLines={4}
+              maxLength={500}
+              textAlignVertical="top"
+            />
+            
+            <Text style={styles.characterCount}>
+              {applicationMessage.length}/500 characters
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => {
+                  setApplicationModalVisible(false);
+                  setApplicationMessage('');
+                }}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.modalSubmitButton,
+                  applying && styles.modalSubmitButtonDisabled
+                ]}
+                onPress={submitApplication}
+                disabled={applying || !applicationMessage.trim()}
+              >
+                {applying ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalSubmitButtonText}>Submit Application</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
 
-// Styles remain the same as original...
+// Helper function to get application status color
+const getApplicationStatusColor = (status) => {
+  switch (status) {
+    case 'pending': return '#FF9800';
+    case 'approved': return '#4CAF50';
+    case 'rejected': return '#F44336';
+    case 'withdrawn': return '#666';
+    default: return '#666';
+  }
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -680,21 +817,25 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     left: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
+    flex: 1,
     padding: 20,
   },
   header: {
     marginBottom: 20,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#2B2B2B',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   organizationInfo: {
     flexDirection: 'row',
@@ -704,7 +845,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginRight: 10,
+    marginRight: 12,
   },
   organizationName: {
     fontSize: 16,
@@ -713,12 +854,12 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 16,
+    color: '#333',
     lineHeight: 24,
-    color: '#444',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   detailsContainer: {
-    marginBottom: 30,
+    marginBottom: 24,
   },
   detailRow: {
     flexDirection: 'row',
@@ -728,67 +869,181 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 16,
     color: '#666',
-    marginLeft: 10,
+    marginLeft: 12,
     flex: 1,
   },
-  actionsContainer: {
-    gap: 12,
-  },
-  registerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
+  applicationStatusContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
     borderRadius: 12,
+    marginBottom: 24,
+  },
+  applicationStatusTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2B2B2B',
     marginBottom: 8,
   },
-  registerButtonActive: {
+  applicationStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 8,
+  },
+  applicationStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  applicationMessage: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    marginBottom: 8,
+  },
+  applicationResponse: {
+    fontSize: 14,
+    color: '#4e8cff',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  withdrawButton: {
+    backgroundColor: '#FFEBEE',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  withdrawButtonText: {
+    color: '#F44336',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  actionContainer: {
+    gap: 12,
+  },
+  applyButton: {
+    backgroundColor: '#4e8cff',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  applyButtonActive: {
     backgroundColor: '#4e8cff',
   },
-  unregisterButton: {
-    backgroundColor: '#ff6b6b',
+  applyButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  applyButtonPending: {
+    backgroundColor: '#FF9800',
+  },
+  applyButtonApproved: {
+    backgroundColor: '#4CAF50',
+  },
+  applyButtonRejected: {
+    backgroundColor: '#F44336',
+  },
+  applyButtonWithdrawn: {
+    backgroundColor: '#666',
+  },
+  registerButton: {
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  registerButtonActive: {
+    backgroundColor: '#4CAF50',
   },
   registerButtonDisabled: {
     backgroundColor: '#ccc',
   },
-  registerButtonText: {
+  unregisterButton: {
+    backgroundColor: '#F44336',
+  },
+  chatButton: {
+    backgroundColor: '#9C27B0',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
-  disabledButtonText: {
-    color: '#999',
-  },
-  chatButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 2,
+    alignItems: 'center',
+    padding: 20,
   },
-  chatButtonActive: {
-    backgroundColor: '#4e8cff',
-    borderColor: '#4e8cff',
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
   },
-  chatButtonSecondary: {
-    backgroundColor: 'transparent',
-    borderColor: '#4e8cff',
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2B2B2B',
+    marginBottom: 8,
   },
-  chatButtonDisabled: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#ddd',
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    lineHeight: 20,
   },
-  chatButtonText: {
+  messageInput: {
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 8,
+    padding: 12,
     fontSize: 16,
+    minHeight: 100,
+    marginBottom: 8,
+  },
+  characterCount: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'right',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    alignItems: 'center',
+  },
+  modalCancelButtonText: {
+    color: '#666',
     fontWeight: '600',
-    marginLeft: 8,
   },
-  buttonIcon: {
-    marginRight: 4,
+  modalSubmitButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#4e8cff',
+    alignItems: 'center',
   },
-  buttonLoader: {
-    marginRight: 8,
+  modalSubmitButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  modalSubmitButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });
 

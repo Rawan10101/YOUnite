@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { arrayRemove, arrayUnion, collection, doc, onSnapshot, updateDoc, setDoc } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
