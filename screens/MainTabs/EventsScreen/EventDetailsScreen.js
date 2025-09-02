@@ -43,12 +43,12 @@ const localCategoryImages = {
 // Function to get the correct image source based on event data
 const getImageSource = (event) => {
   // If has custom image uploaded to Firebase
-  if (event.hasCustomImage && event.imageUrl) {
-    return { uri: event.imageUrl };
-  }
+if (event?.hasCustomImage && event.imageUrl) {
+  return { uri: event.imageUrl };
+}
   
   // Use local default based on category
-  if (event.category && localCategoryImages[event.category]) {
+  if (event?.category && localCategoryImages[event.category]) {
     return localCategoryImages[event.category];
   }
   
@@ -444,7 +444,7 @@ export default function EventDetailsScreen({ route, navigation }) {
 
       navigation.navigate('Chat', {
         chatRoomId: `event_${event.id}`,
-        chatTitle: `${event.title} - Chat`,
+        chatTitle: `${event?.title} - Chat`,
         isEventChat: true,
         eventId: event.id,
         organizationId: event.organizationId,

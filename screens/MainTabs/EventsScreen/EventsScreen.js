@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { arrayRemove, arrayUnion, collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, doc, onSnapshot, orderBy, query, updateDoc,increment, getDoc} from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -143,43 +143,73 @@ export default function EventsScreen({ navigation }) {
     setPastEvents(past);
   };
 
-  const handleRegister = async (eventId) => {
-    if (!user?.uid) {
-      Alert.alert('Error', 'You must be logged in to register for events.');
-      return;
-    }
+const handleRegister = async (eventId) => {
+  if (!user?.uid) {
+    Alert.alert('Error', 'You must be logged in to register for events.');
+    return;
+  }
 
-    const event = events.find(e => e.id === eventId);
-    if (!event) return;
+  const event = events.find(e => e.id === eventId);
+  if (!event) {
+    console.warn('handleRegister: Event not found for id:', eventId);
+    Alert.alert('Error', 'Event not found.');
+    return;
+  }
 
-    try {
-      const eventRef = doc(db, 'events', eventId);
-      
-      if (event.isRegistered) {
-        await updateDoc(eventRef, {
-          registeredVolunteers: arrayRemove(user.uid)
-        });
-        
-        setRegisteredEvents(prev => prev.filter(e => e.id !== eventId));
-        Alert.alert('Cancelled', 'Your registration has been cancelled.');
-      } else {
-        if (event.participants >= event.maxParticipants) {
-          Alert.alert('Event Full', 'This event is already at maximum capacity.');
-          return;
-        }
-        
-        await updateDoc(eventRef, {
-          registeredVolunteers: arrayUnion(user.uid)
-        });
-        
-        setRegisteredEvents(prev => [...prev, event]);
-        Alert.alert('Success', 'You have successfully registered for this event!');
+  try {
+    const eventRef = doc(db, 'events', eventId);
+
+    console.log('Starting registration update for event:', eventId);
+    console.log('Current isRegistered:', event.isRegistered);
+    console.log('Current participants:', event.participants);
+    console.log('Max participants:', event.maxParticipants);
+
+    // Fetch fresh participantsCount from Firestore
+    const snap = await getDoc(eventRef);
+    const currentCount = snap.exists() ? snap.data().participantsCount : undefined;
+    console.log('Current Firestore participantsCount:', currentCount);
+
+    if (event.isRegistered) {
+      console.log('Attempting to unregister user:', user.uid);
+
+      if (currentCount === undefined || currentCount <= 0) {
+        console.warn('Participants count is missing or zero, cannot decrement further');
       }
-    } catch (error) {
-      console.error('Error updating registration:', error);
-      Alert.alert('Error', 'Failed to update registration. Please try again.');
+
+      await updateDoc(eventRef, {
+        registeredVolunteers: arrayRemove(user.uid),
+        participantsCount: increment(-1),
+        updatedAt: new Date(),
+      });
+
+      setRegisteredEvents(prev => prev.filter(e => e.id !== eventId));
+      Alert.alert('Cancelled', 'Your registration has been cancelled.');
+      console.log('Unregistration successful');
+    } else {
+      if (event.participants >= event.maxParticipants) {
+        Alert.alert('Event Full', 'This event is already at maximum capacity.');
+        console.warn('Cannot register, event full');
+        return;
+      }
+
+      console.log('Attempting to register user:', user.uid);
+
+      await updateDoc(eventRef, {
+        registeredVolunteers: arrayUnion(user.uid),
+        participantsCount: increment(1),
+        updatedAt: new Date(),
+      });
+
+      setRegisteredEvents(prev => [...prev, event]);
+      Alert.alert('Success', 'You have successfully registered for this event!');
+      console.log('Registration successful');
     }
-  };
+  } catch (error) {
+    console.error('Error updating registration:', error);
+    Alert.alert('Error', `Failed to update registration. ${error.message}`);
+  }
+};
+
 
   const handleRefresh = () => {
     setRefreshing(true);

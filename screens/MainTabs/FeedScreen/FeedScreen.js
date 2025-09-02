@@ -1,200 +1,247 @@
-import { Ionicons } from '@expo/vector-icons';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Alert,
+  View,
+  Text,
   FlatList,
   Image,
-  RefreshControl,
-  StyleSheet,
-  Text,
   TouchableOpacity,
-  View,
+  RefreshControl,
+  TextInput,
+  ScrollView,
+  Alert,
+  StyleSheet,
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useAppContext } from '../../../contexts/AppContext';
+import { collection, onSnapshot, query, where, orderBy, limit, Timestamp } from 'firebase/firestore';
 import { db } from '../../../firebaseConfig';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function FeedScreen({ navigation }) {
-  const { user, followedOrganizations } = useAppContext();
-  const [feedData, setFeedData] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
+  const [popularEvents, setPopularEvents] = useState([]);
+  const [topOrganizations, setTopOrganizations] = useState([]);
+  const [posts, setPosts] = useState([]);
+
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const followedOrgIds = ['org1', 'org2', 'org3']; // Replace with actual followed org IDs
 
   useEffect(() => {
-    const unsubscribe = fetchFeedData();
+    const unsubscribePopularEvents = fetchPopularEvents();
+    const unsubscribeTopOrgs = fetchTopOrganizations();
+    const unsubscribePosts = fetchOrganizationPosts();
+
     return () => {
-      if (unsubscribe) unsubscribe();
+      unsubscribePopularEvents && unsubscribePopularEvents();
+      unsubscribeTopOrgs && unsubscribeTopOrgs();
+      unsubscribePosts && unsubscribePosts();
     };
-  }, [user?.uid, followedOrganizations]);
+  }, []);
 
-  const fetchFeedData = () => {
-    setLoading(true);
-    console.log('Fetching posts from Firestore...'); // Debug log
-    
-    const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
-
-    const unsubscribePosts = onSnapshot(
-      postsQuery, 
-      snapshot => {
-        console.log('Posts snapshot received:', snapshot.size); // Debug log
-        
-        const posts = snapshot.docs.map(doc => {
-          const data = doc.data();
-          console.log('Post data:', data); // Debug log
-          
-          return {
-            id: doc.id,
-            type: data.type || 'user_post',
-            authorId: data.authorId,
-            authorType: data.authorType || 'user',
-            authorName: data.authorName,
-            authorAvatar: data.authorAvatar || 'https://via.placeholder.com/50',
-            createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toLocaleString() : new Date().toLocaleString(),
-            text: data.text || '',
-            imageUrl: data.imageUrl || null,
-          };
-        });
-        
-        console.log('Processed posts:', posts.length); // Debug log
-        setFeedData(posts);
-        setLoading(false);
-        setRefreshing(false);
-      }, 
-      error => {
-        console.error('Firestore error:', error); // Debug log
-        Alert.alert('Error', 'Failed to load posts: ' + error.message);
-        setLoading(false);
-        setRefreshing(false);
-      }
+  const fetchPopularEvents = () => {
+    const today = Timestamp.fromDate(new Date());
+    const popularEventsQuery = query(
+      collection(db, 'events'),
+      where('date', '>=', today),
+      orderBy('participantsCount', 'desc'),
+      limit(10)
     );
 
-    return unsubscribePosts;
+    return onSnapshot(popularEventsQuery, snapshot => {
+      const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPopularEvents(events);
+      setLoading(false);
+      setRefreshing(false);
+    }, error => {
+      Alert.alert('Error', 'Failed to load popular events: ' + error.message);
+      setLoading(false);
+      setRefreshing(false);
+    });
+  };
+
+  const fetchTopOrganizations = () => {
+    const orgsQuery = query(collection(db, 'organizations'), orderBy('followers', 'desc'), limit(20));
+
+    return onSnapshot(orgsQuery, snapshot => {
+      const orgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTopOrganizations(orgs);
+    }, error => {
+      Alert.alert('Error', 'Failed to load organizations: ' + error.message);
+    });
+  };
+
+  const fetchOrganizationPosts = () => {
+    // Fetch recent posts from all organizations, filter on client for followed/unfollowed
+    const postsQuery = query(
+      collection(db, 'posts'),
+      orderBy('createdAt', 'desc'),
+      limit(40) // fetch more for client filtering
+    );
+
+    return onSnapshot(postsQuery, snapshot => {
+      const allPosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Optionally you may want to prioritize followed org posts or mix
+      // Here we just pass all posts; applying any user filter you want in render or earlier
+
+      setPosts(allPosts);
+    }, error => {
+      Alert.alert('Error', 'Failed to load posts: ' + error.message);
+    });
   };
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchFeedData();
+    setLoading(true);
+    fetchPopularEvents();
+    fetchTopOrganizations();
+    fetchOrganizationPosts();
   };
 
-  const renderFeedItem = ({ item, index }) => (
-    <Animatable.View animation="fadeInUp" delay={index * 80} style={styles.feedItem}>
-      <View style={styles.feedHeader}>
-        <Image source={{ uri: item.authorAvatar }} style={styles.orgLogo} />
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.orgName}>{item.authorName}</Text>
-          <Text style={styles.timestamp}>{item.createdAt}</Text>
-        </View>
-        <View style={styles.postTypeIndicator}>
-          <Ionicons
-            name={item.authorType === 'organization' ? 'business' : 'person'}
-            size={16}
-            color="#666"
-          />
-        </View>
+  // Render Popular Event (horizontal scroll)
+  const renderPopularEvent = ({ item, index }) => (
+    <Animatable.View animation="fadeInLeft" delay={index * 100} style={styles.horizontalCard}>
+      <Image
+        source={{ uri: item.organizationAvatar || 'https://via.placeholder.com/50' }}
+        style={styles.avatar}
+      />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={styles.eventName}>{item.title || item.eventName || 'Untitled Event'}</Text>
+        <Text style={styles.organizationName}>{item.organizationName || item.organization}</Text>
+        <Text style={styles.eventDate}>
+          {item.date?.toDate ? item.date.toDate().toLocaleDateString() : item.date || ''}
+        </Text>
       </View>
-      <View style={styles.feedContent}>
-        <Text style={styles.feedText}>{item.text}</Text>
-        {item.imageUrl && <Image source={{ uri: item.imageUrl }} style={styles.feedImage} />}
+      <TouchableOpacity
+        style={styles.registerButton}
+        onPress={() => navigation.navigate('EventRegistration', { eventId: item.id })}
+      >
+        <Text style={styles.registerButtonText}>Register</Text>
+      </TouchableOpacity>
+    </Animatable.View>
+  );
+
+  // Render Top Organization (horizontal scroll)
+ const renderOrgCard = ({ item }) => (
+  <Animatable.View style={styles.orgCard} animation="fadeInLeft">
+    <Image source={{ uri: item.logoUrl || item.logo || 'https://via.placeholder.com/50' }} style={styles.orgAvatar} />
+    {/* Render the organization name here, never the ID */}
+    <Text style={styles.orgName}>
+      {item.name || item.organizationName || 'Unknown Organization'}
+    </Text>
+    {/* <Text style={styles.orgFollowers}>{item.followers || 0} followers</Text> */}
+  </Animatable.View>
+);
+
+  // Render Organization Post (vertical Instagram style)
+  const renderPost = ({ item }) => (
+    <Animatable.View style={styles.postCard} animation="fadeInUp">
+      <View style={styles.postHeader}>
+        <Image
+          source={{ uri: item.organizationAvatar || 'https://via.placeholder.com/40' }}
+          style={styles.postAvatar}
+        />
+        <Text style={styles.postOrgName}>{item.organizationName || item.organization}</Text>
       </View>
+      <Text style={styles.postCaption}>{item.caption || item.text || ''}</Text>
+      {item.imageUrl ? (
+        <Image source={{ uri: item.imageUrl }} style={styles.postImage} />
+      ) : null}
       <View style={styles.postActions}>
-        <TouchableOpacity style={styles.postActionButton}>
-          <Ionicons name="heart-outline" size={18} color="#666" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.postActionButton}>
-          <Ionicons name="chatbubble-outline" size={18} color="#666" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.postActionButton}>
-          <Ionicons name="share-outline" size={18} color="#666" />
-        </TouchableOpacity>
+        <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
+        <TouchableOpacity><Ionicons name="chatbubble-outline" size={24} color="#444" /></TouchableOpacity>
+        <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity>
       </View>
     </Animatable.View>
   );
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Ionicons name="heart" size={50} color="#2B2B2B" />
-        <Text style={styles.loadingText}>Loading posts...</Text>
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={styles.loadingContainer}>
+      <Ionicons name="calendar" size={50} color="#2B2B2B" />
+      <Text style={styles.loadingText}>Loading feed...</Text>
+    </View>
+  );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.outerContainer}>
       <View style={styles.topBar}>
         <Text style={styles.appName}>YOUnite</Text>
         <View style={styles.topBarButtons}>
-          {/* Create Post Button */}<TouchableOpacity
-  style={styles.iconButton}
-  onPress={() => navigation.navigate('CreateReport')}
->
-  <Ionicons name="flag-outline" size={28} color="#2B2B2B" />
-</TouchableOpacity>
-
-          
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => navigation.navigate('Notifications')}
-          >
+          <TouchableOpacity onPress={() => setIsSearching(true)} style={styles.iconButton}>
+            <Ionicons name="search" size={28} color="#2B2B2B" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('CreateReport')}>
+            <Ionicons name="flag-outline" size={28} color="#2B2B2B" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Notifications')}>
             <Ionicons name="notifications-outline" size={28} color="#2B2B2B" />
             <View style={styles.notificationBadge}>
               <Text style={styles.notificationCount}>3</Text>
             </View>
           </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => navigation.navigate('Chat')}
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={28} color="#2B2B2B" />
-          </TouchableOpacity>
         </View>
       </View>
 
-      <FlatList
-        data={feedData}
-        keyExtractor={(item) => item.id}
-        renderItem={renderFeedItem}
+      <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        contentContainerStyle={{ paddingBottom: 50 }}
-        showsVerticalScrollIndicator={false}
-      />
+      >
+        {/* Popular Events */}
+        <View style={{ marginVertical: 12 }}>
+          <Text style={styles.sectionTitle}>Popular Events</Text>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={popularEvents}
+            keyExtractor={item => item.id}
+            renderItem={renderPopularEvent}
+            contentContainerStyle={{ paddingLeft: 16, paddingRight: 12 }}
+          />
+        </View>
+
+        {/* Top Organizations */}
+        <View style={{ marginVertical: 12 }}>
+          <Text style={styles.sectionTitle}>Top Organizations</Text>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={topOrganizations}
+            keyExtractor={item => item.id}
+            renderItem={renderOrgCard}
+            contentContainerStyle={{ paddingLeft: 16, paddingRight: 12 }}
+          />
+        </View>
+
+        {/* Organization Posts */}
+        <View style={{ marginVertical: 12 }}>
+          <Text style={styles.sectionTitle}>Posts</Text>
+          <FlatList
+            data={posts}
+            keyExtractor={item => item.id}
+            renderItem={renderPost}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
+          />
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
+  outerContainer: { flex: 1, backgroundColor: '#fff' },
   topBar: {
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    backgroundColor: '#fff',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
+    borderBottomWidth: 1,
   },
-  appName: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    color: '#2B2B2B',
-  },
-  topBarButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-
-  iconButton: {
-    marginLeft: 8,
-    position: 'relative',
-  },
+  appName: { fontSize: 28, fontWeight: 'bold', color: '#2B2B2B' },
+  topBarButtons: { flexDirection: 'row', gap: 14 },
+  iconButton: { marginLeft: 10, position: 'relative' },
   notificationBadge: {
     position: 'absolute',
     top: -4,
@@ -206,90 +253,78 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  notificationCount: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  feedItem: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  feedHeader: {
+  notificationCount: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+
+  sectionTitle: { fontSize: 22, fontWeight: '700', color: '#2B2B2B', marginLeft: 16, marginBottom: 12 },
+
+  // Popular Events horizontal card
+  horizontalCard: {
+    backgroundColor: '#fefefe',
+    width: 280,
+    marginRight: 16,
+    borderRadius: 12,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    paddingBottom: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
-  orgLogo: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F5F5F5',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#eee' },
+  eventName: { fontWeight: '700', fontSize: 16, color: '#2B2B2B' },
+  eventDate: { fontSize: 13, color: '#666', marginTop: 4 },
+  organizationName: { fontSize: 14, color: '#555', marginTop: 2 },
+  registerButton: {
+    backgroundColor: '#346beb',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  orgName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2B2B2B',
+  registerButtonText: { color: '#fff', fontWeight: '600' },
+
+  // Top org cards
+  orgCard: {
+    backgroundColor: '#fff',
+    width: 140,
+    marginRight: 16,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
-  timestamp: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 2,
-  },
-  postTypeIndicator: {
-    padding: 4,
-  },
-  feedContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  feedText: {
-    fontSize: 16,
-    color: '#2B2B2B',
-    lineHeight: 24,
-    marginBottom: 12,
-  },
-  feedImage: {
-    width: '100%',
-    height: 200,
+  orgAvatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#eee', marginBottom: 8 },
+  orgName: { fontWeight: '700', fontSize: 16, color: '#2B2B2B', textAlign: 'center' },
+  orgFollowers: { fontSize: 12, color: '#555' },
+
+  // Instagram-style post cards
+  postCard: {
+    backgroundColor: '#fff',
     borderRadius: 12,
-    marginTop: 8,
+    marginBottom: 16,
+    padding: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
+  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  postAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#eee', marginRight: 12 },
+  postOrgName: { fontWeight: 'bold', fontSize: 16, color: '#222' },
+  postCaption: { fontSize: 14, color: '#444', marginBottom: 8 },
+  postImage: { width: '100%', height: 250, borderRadius: 12 },
   postActions: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    justifyContent: 'space-around',
+    paddingTop: 6,
   },
-  postActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 18,
-    color: '#2B2B2B2B',
-    fontWeight: '600',
-  },
+
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 10, fontWeight: '600', fontSize: 16, color: '#2B2B2B' },
 });

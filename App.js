@@ -83,7 +83,29 @@ function ChatStackNavigator() {
     </Stack.Navigator>
   );
 }
+// VOLUNTEER STACK SCREENS (existing)
+function FeedStackScreen() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="FeedMain" component={FeedScreen} />
+      {/* <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} /> */}
+<Stack.Screen 
+  name="CreateReport" 
+  component={CreateReportScreen}
+  options={{ headerShown: false }}/>
 
+      {/* ADD THIS LINE */}
+      <Stack.Screen 
+        name="Comments" 
+        component={CommentsScreen} 
+        options={{ headerShown: false }} 
+      />
+      
+      <Stack.Screen name="EventDetails" component={EventDetailsScreen} options={{ headerShown: true, title: 'Event Details' }} />
+      <Stack.Screen name="OrganizationDetails" component={OrganizationDetailsScreen} options={{ headerShown: true, title: 'Organization' }} />
+    </Stack.Navigator>
+  );
+}
 
 // VOLUNTEER TAB NAVIGATOR (your existing MainTabs)
 function VolunteerTabs() {
@@ -117,7 +139,8 @@ function VolunteerTabs() {
         headerShown: false,
       })}
     >
-      {/* <Tab.Screen name="Feed" component={FeedStackScreen} /> */}
+      {<Tab.Screen name="Feed" component={FeedStackScreen} /> }
+
       <Tab.Screen name="Discover" component={DiscoverStackScreen} />
       
       <Tab.Screen 
@@ -145,7 +168,7 @@ function OrganizationTabs() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
-          if (route.name === 'Reports') {
+          if (route.name === 'Feed') {
             iconName = focused ? 'analytics' : 'analytics-outline';
           } else if (route.name === 'Events') {
             iconName = focused ? 'calendar' : 'calendar-outline';
@@ -174,7 +197,7 @@ function OrganizationTabs() {
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Reports" component={OrganizationDashboardStack} />
+      <Tab.Screen name="Feed" component={OrganizationDashboardStack} />
       <Tab.Screen name="Events" component={OrganizationEventsStack} />
      <Tab.Screen name="Volunteer" component={VoluntOrgScreen} />
      <Tab.Screen name="Chat" component={ChatStackNavigator} />
@@ -183,29 +206,7 @@ function OrganizationTabs() {
     </Tab.Navigator>
   );
 }
-// VOLUNTEER STACK SCREENS (existing)
-function FeedStackScreen() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="FeedMain" component={FeedScreen} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
-<Stack.Screen 
-  name="CreateReport" 
-  component={CreateReportScreen}
-  options={{ headerShown: false }}/>
 
-      {/* ADD THIS LINE */}
-      <Stack.Screen 
-        name="Comments" 
-        component={CommentsScreen} 
-        options={{ headerShown: false }} 
-      />
-      
-      <Stack.Screen name="EventDetails" component={EventDetailsScreen} options={{ headerShown: true, title: 'Event Details' }} />
-      <Stack.Screen name="OrganizationDetails" component={OrganizationDetailsScreen} options={{ headerShown: true, title: 'Organization' }} />
-    </Stack.Navigator>
-  );
-}
 
 function EventDetailsScreenTab () {
 

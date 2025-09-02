@@ -275,7 +275,7 @@ export default function CreateEventScreen({ navigation }) {
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim(),
         isRecurring,
-        
+        participantsCount: 0,  
         // Chat feature
         withChat: withChat,
         

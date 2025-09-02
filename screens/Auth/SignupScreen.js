@@ -1,16 +1,20 @@
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-    ActivityIndicator, 
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  SafeAreaView,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { auth, db } from '../../firebaseConfig';
 
 export default function SignupScreen({ navigation }) {
@@ -22,9 +26,42 @@ export default function SignupScreen({ navigation }) {
   const [error, setError] = useState('');
   const [isOrganization, setIsOrganization] = useState(false);
 
+  // Location Picker state
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [initialRegion, setInitialRegion] = useState({
+    latitude: 37.78825,
+    longitude: -122.4324,
+    latitudeDelta: 0.01,
+    longitudeDelta: 0.01,
+  });
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setLocationPermissionGranted(true);
+        const location = await Location.getCurrentPositionAsync({});
+        setInitialRegion({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        });
+      } else {
+        setLocationPermissionGranted(false);
+      }
+    })();
+  }, []);
+
   const validate = () => {
     if (!email || !username || !password || !confirmPassword) {
       setError('Please fill all fields.');
+      return false;
+    }
+    if (!isOrganization && !selectedLocation) {
+      setError('Please select your location.');
       return false;
     }
     const emailRegex = /\S+@\S+\.\S+/;
@@ -49,14 +86,11 @@ export default function SignupScreen({ navigation }) {
 
     setLoading(true);
     try {
-      // Create user account
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Update user profile with display name
       await updateProfile(user, { displayName: username });
 
-      // Prepare user data for Firestore
       const userData = {
         uid: user.uid,
         email: email.toLowerCase(),
@@ -70,11 +104,16 @@ export default function SignupScreen({ navigation }) {
           email: email.toLowerCase(),
           avatar: null,
           phone: null,
-          location: null,
-        }
+          location: isOrganization
+            ? null
+            : {
+                latitude: selectedLocation.latitude,
+                longitude: selectedLocation.longitude,
+                address: selectedLocation.address || '',
+              },
+        },
       };
 
-      // Add role-specific data
       if (isOrganization) {
         userData.organizationData = {
           organizationName: username,
@@ -96,13 +135,12 @@ export default function SignupScreen({ navigation }) {
           totalHours: 0,
           eventsAttended: 0,
           badges: [],
+          location: userData.profile.location,
         };
       }
 
-      // Save user data to Firestore
       await setDoc(doc(db, 'users', user.uid), userData);
 
-      // Create additional role-specific collections
       if (isOrganization) {
         await setDoc(doc(db, 'organizations', user.uid), {
           uid: user.uid,
@@ -126,7 +164,7 @@ export default function SignupScreen({ navigation }) {
           interests: [],
           skills: [],
           experience: 'beginner',
-          location: null,
+          location: userData.profile.location,
           availability: {},
           registeredEvents: [],
           followedOrganizations: [],
@@ -137,22 +175,16 @@ export default function SignupScreen({ navigation }) {
         });
       }
 
-      // Show success message and navigate
-      const successMessage = isOrganization 
+      const successMessage = isOrganization
         ? 'Organization account created successfully! Your account is pending verification.'
         : 'Volunteer account created successfully!';
-      
-      Alert.alert('Success!', successMessage, [
-        {
-          text: 'OK',
-          onPress: () => navigation.navigate('Login')
-        }
-      ]);
 
+      Alert.alert('Success!', successMessage, [
+        { text: 'OK', onPress: () => navigation.navigate('Login') },
+      ]);
     } catch (err) {
       console.error('Signup error:', err);
       let errorMessage = 'An error occurred during signup.';
-      
       switch (err.code) {
         case 'auth/email-already-in-use':
           errorMessage = 'This email is already registered.';
@@ -169,7 +201,6 @@ export default function SignupScreen({ navigation }) {
         default:
           errorMessage = `Signup failed: ${err.message}`;
       }
-      
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -201,6 +232,59 @@ export default function SignupScreen({ navigation }) {
         editable={!loading}
       />
 
+      {!isOrganization && (
+        <>
+          <TouchableOpacity
+            style={styles.locationPickerButton}
+            onPress={() => setLocationModalVisible(true)}
+            disabled={loading}
+          >
+            <Text style={{ color: selectedLocation ? '#000' : '#999' }}>
+              {selectedLocation ? selectedLocation.address || 'Location selected' : 'Set your location'}
+            </Text>
+            <Ionicons name="map" size={20} color="#4e8cff" />
+          </TouchableOpacity>
+
+          <Modal
+            visible={locationModalVisible}
+            animationType="slide"
+            onRequestClose={() => setLocationModalVisible(false)}
+          >
+            <SafeAreaView style={{ flex: 1 }}>
+              <MapView
+                style={{ flex: 1 }}
+                initialRegion={initialRegion}
+                onPress={e => {
+                  const { latitude, longitude } = e.nativeEvent.coordinate;
+                  setSelectedLocation({ latitude, longitude, address: '' });
+                }}
+                showsUserLocation
+                showsMyLocationButton
+              >
+                {selectedLocation && (
+                  <Marker coordinate={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }} />
+                )}
+              </MapView>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  onPress={() => setLocationModalVisible(false)}
+                  style={styles.modalButton}
+                >
+                  <Text>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setLocationModalVisible(false)}
+                  style={[styles.modalButton, styles.modalButtonConfirm]}
+                  disabled={!selectedLocation}
+                >
+                  <Text style={{ color: 'white' }}>Confirm Location</Text>
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
+          </Modal>
+        </>
+      )}
+
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -219,28 +303,29 @@ export default function SignupScreen({ navigation }) {
         editable={!loading}
       />
 
-      {/* User Type Selection */}
       <View style={styles.userTypeSection}>
         <Text style={styles.sectionTitle}>Account Type</Text>
-        
+
         <TouchableOpacity
           style={[
             styles.userTypeButton,
-            !isOrganization && styles.userTypeButtonActive
+            !isOrganization && styles.userTypeButtonActive,
           ]}
           onPress={() => setIsOrganization(false)}
           disabled={loading}
         >
-          <Ionicons 
-            name="person-outline" 
-            size={20} 
-            color={!isOrganization ? '#4e8cff' : '#666'} 
+          <Ionicons
+            name="person-outline"
+            size={20}
+            color={!isOrganization ? '#4e8cff' : '#666'}
           />
           <View style={styles.userTypeContent}>
-            <Text style={[
-              styles.userTypeTitle,
-              !isOrganization && styles.userTypeTextActive
-            ]}>
+            <Text
+              style={[
+                styles.userTypeTitle,
+                !isOrganization && styles.userTypeTextActive,
+              ]}
+            >
               I'm a Volunteer
             </Text>
             <Text style={styles.userTypeDescription}>
@@ -252,21 +337,23 @@ export default function SignupScreen({ navigation }) {
         <TouchableOpacity
           style={[
             styles.userTypeButton,
-            isOrganization && styles.userTypeButtonActive
+            isOrganization && styles.userTypeButtonActive,
           ]}
           onPress={() => setIsOrganization(true)}
           disabled={loading}
         >
-          <Ionicons 
-            name="business-outline" 
-            size={20} 
-            color={isOrganization ? '#4e8cff' : '#666'} 
+          <Ionicons
+            name="business-outline"
+            size={20}
+            color={isOrganization ? '#4e8cff' : '#666'}
           />
           <View style={styles.userTypeContent}>
-            <Text style={[
-              styles.userTypeTitle,
-              isOrganization && styles.userTypeTextActive
-            ]}>
+            <Text
+              style={[
+                styles.userTypeTitle,
+                isOrganization && styles.userTypeTextActive,
+              ]}
+            >
               I'm an Organization
             </Text>
             <Text style={styles.userTypeDescription}>
@@ -276,9 +363,9 @@ export default function SignupScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity 
-        style={[styles.button, loading && styles.buttonDisabled]} 
-        onPress={handleSignup} 
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleSignup}
         disabled={loading}
       >
         {loading ? (
@@ -290,7 +377,7 @@ export default function SignupScreen({ navigation }) {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity 
+      <TouchableOpacity
         onPress={() => navigation.navigate('Login')}
         disabled={loading}
       >
@@ -302,7 +389,7 @@ export default function SignupScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = {
   container: {
     flex: 1,
     padding: 20,
@@ -324,6 +411,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     marginBottom: 15,
     fontSize: 16,
+    backgroundColor: '#f8f9fa',
+  },
+  locationPickerButton: {
+    flexDirection: 'row',
+    borderColor: '#ddd',
+    borderWidth: 1,
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 15,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#f8f9fa',
   },
   button: {
@@ -374,7 +472,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 20,
     borderRadius: 12,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#ddd',
     marginBottom: 10,
     backgroundColor: '#fff',
@@ -401,4 +499,20 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 2,
   },
-});
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderTopWidth: 1,
+    borderColor: '#ccc',
+  },
+  modalButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#eee',
+  },
+  modalButtonConfirm: {
+    backgroundColor: '#4e8cff',
+  },
+};
