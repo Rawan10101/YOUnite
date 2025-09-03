@@ -1,110 +1,67 @@
+# Younite
 
-# YOUnite
+Younite is a modern React Native social volunteering platform that empowers volunteers and organizations to connect, collaborate, and make a measurable impact in their communities. Built with Expo and Firebase, Younite delivers seamless event participation, instant profile management, real-time activity tracking, and reliable image uploads using serverless cloud functions.
 
-**YOUnite** is a mobile application designed to connect volunteers, NGOs, and community organizations in one place.  
-It helps people find volunteer opportunities, organize events, and report areas that need attention — making it easier for everyone to give back to the community.
-
-This project is built with **React Native** using the **Expo** framework.
-
----
+***
 
 ## Features
 
-- **Volunteer Event Listings**  
-  Organizations can post events with details such as date, time, location, and description.  
-  Example: "Trash cleanup at the Nile riverbank on Saturday, 9:00 AM."
+- **Volunteer Profiles:** Create your account, manage your details, and set a custom profile photo directly from your mobile device.
+- **Event Discovery:** Browse, register, and track events organized by trusted organizations, with instant confirmation.
+- **Organization Dashboards:** Organizations can post updates, engage followers, and view volunteer participation data.
+- **Activity Timeline:** Review your engagement history, see badges earned, and follow the latest reports in a dynamic, animated feed.
+- **Secure Image Uploads:** Profile images and media are uploaded reliably with Firebase Cloud Functions—no Blob errors or compatibility issues.
+- **Cross-Platform Support:** Works on Android, iOS, and web via Expo.
 
-- **User-Created Volunteer Groups**  
-  Volunteers can create groups to organize their own initiatives.
+***
 
-- **Verified User Profiles**  
-  User identity verification through official ID submission.
+## Technologies
 
-- **Community Reporting**  
-  Any user can report a location that needs attention, such as a polluted area or unsafe park.
+- React Native (Expo)
+- Firebase Authentication
+- Cloud Firestore (NoSQL)
+- Firebase Cloud Storage
+- Firebase Cloud Functions
+- Expo and React Native libraries for animations and device APIs
 
-- **Event Search and Filters**  
-  Search for events by category, location, or date.
-
-- **Event Details & RSVP**  
-  View event details and confirm participation.
-
----
-
-## Tech Stack
-
-- **Frontend:** React Native with Expo
-- **State Management:** React Hooks / Context API
-- **Backend:** Firebase
-- **Database:** Firebase Firestore
----
+***
 
 ## Installation
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/Rawan10101/YOUnite.git
-cd YOUnite
-````
+1. Clone the repository:
+   ```
+   git clone https://github.com/your-username/younite.git
+   cd younited
+   ```
 
-### 2. Install dependencies
+2. Install dependencies:
+   ```
+   npm install
+   ```
+   or
+   ```
+   yarn install
+   ```
 
-```bash
-npm install
-```
+3. Start Expo:
+   ```
+   expo start
+   ```
 
-### 3. Start the Expo development server
+***
 
-```bash
-npx expo start
-```
+## Contributing
 
-### 4. Run on Android emulator
+Contributions are welcome. Please open pull requests for enhancements or bug fixes. All contributors are encouraged to follow project conventions and document major changes.
 
-* Press `a` in the terminal after starting Expo.
+***
 
----
+## Support
 
-## Project Structure
+If you encounter issues or have feature requests, use the [GitHub Issues](https://github.com/your-username/younite/issues) tab.
 
-```
-YOUnite/
-│
-├── App.js                # Main entry point
-├── assets/               # Images, fonts, static files
-├── components/           # Reusable UI components
-├── screens/              # App screens (Home, Events, etc.)
-├── navigation/           # Navigation setup (stack, tabs)
-├── package.json          # Project dependencies
-└── README.md             # Project documentation
-```
-
----
-
-## Planned Screens
-
-* **Splash Screen** – App logo and loading animation.
-* **Login / Sign Up** – User authentication and ID verification.
-* **Home Screen** – List of upcoming events.
-* **Event Details** – Detailed view of a single event with RSVP option.
-* **Create Event** – Form to create and publish new events.
-* **Groups** – Create and join volunteer groups.
-* **Reports** – Submit and view community reports.
-
----
-
-## Development Roadmap
-
-1. Set up core navigation and UI.
-2. Implement authentication and user verification.
-3. Build event listing and event details features.
-4. Add group creation and joining functionality.
-5. Enable community reporting with location tagging.
-6. Deploy backend and connect data.
-7. Test and optimize performance.
-
----
+***
 
 ## License
 
-This project is licensed under the MIT License.
+Younite is licensed under the MIT License.
