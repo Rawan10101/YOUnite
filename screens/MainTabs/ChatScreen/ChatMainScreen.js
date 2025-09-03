@@ -1,399 +1,309 @@
-import { Ionicons } from '@expo/vector-icons';
-import { collection, doc, getDoc, onSnapshot, orderBy, query, where } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Platform,
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-} from 'react-native';
-import { useAppContext } from '../../../contexts/AppContext';
-import { db } from '../../../firebaseConfig';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
+import { useNavigation } from "@react-navigation/native";
+import { useAppContext } from "../../../contexts/AppContext";
+import { db } from "../../../firebaseConfig";
 
-export default function ChatMainScreen({ navigation }) {
+export default function ChatMainScreen() {
+  const navigation = useNavigation();
   const { user } = useAppContext();
+
   const [chatRooms, setChatRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // New state for search
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filtered chat rooms based on search
+  const filteredChatRooms = chatRooms.filter((room) =>
+    room.chatTitle.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const renderAvatar = (uri, size = 50) => {
+    if (uri) {
+      return (
+        <Image
+          source={{ uri }}
+          style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+        />
+      );
+    }
+    return (
+      <View
+        style={[
+          styles.avatar,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: "#2c4472ff",
+            justifyContent: "center",
+            alignItems: "center",
+          },
+        ]}
+      >
+        <Ionicons name="people" size={size * 0.6} color="#fff" />
+      </View>
+    );
+  };
+
   useEffect(() => {
     if (!user?.uid) return;
 
-    console.log('Setting up chat rooms listener for user:', user.uid);
-
-    // FIXED: Use correct field name 'lastMessageTime' instead of 'lastMessageTimestamp'
     const q = query(
-      collection(db, 'chatRooms'),
-      where('participants', 'array-contains', user.uid),
-    //   orderBy('lastMessageTime', 'desc') // ← FIXED: Changed from 'lastMessageTimestamp' to 'lastMessageTime'
+      collection(db, "chatRooms"),
+      where("participants", "array-contains", user.uid)
     );
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      console.log('Chat rooms snapshot received:', snapshot.docs.length, 'documents');
-      
-      const rooms = [];
-      
-      for (const docSnapshot of snapshot.docs) {
-        const roomData = docSnapshot.data();
-        const roomId = docSnapshot.id;
-        
-        console.log('Processing chat room:', roomId, roomData);
-        
-        const enrichedRoom = {
-          id: roomId,
-          ...roomData,
-        };
+    const unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        const rooms = [];
 
-        // Determine chat type and title
-        if (roomId === 'global-volunteer-chat') {
-          enrichedRoom.chatTitle = 'Global Volunteer Chat';
-          enrichedRoom.avatar = 'https://via.placeholder.com/50/4CAF50/ffffff?text=🌍';
-        } else if (roomId.startsWith('event_')) {
-          // Event chat
-          const eventId = roomId.replace('event_', '');
-          try {
-            const eventDoc = await getDoc(doc(db, 'events', eventId));
-            if (eventDoc.exists()) {
-              const eventData = eventDoc.data();
-              enrichedRoom.chatTitle = `${eventData.title}`;
-              enrichedRoom.eventTitle = eventData.title;
-              enrichedRoom.isEventChat = true;
-            } else {
-              enrichedRoom.chatTitle = 'Event Chat';
-              enrichedRoom.isEventChat = true;
-            }
-          } catch (error) {
-            console.error('Error fetching event details:', error);
-            enrichedRoom.chatTitle = 'Event Chat';
-            enrichedRoom.isEventChat = true;
-          }
-          enrichedRoom.avatar = 'https://via.placeholder.com/50/2196F3/ffffff?text=📅';
-        } else if (roomData.isGroupChat) {
-          // Group chat
-          enrichedRoom.chatTitle = roomData.name || 'Group Chat';
-          enrichedRoom.avatar = 'https://via.placeholder.com/50/FF9800/ffffff?text=👥';
-        } else if (roomData.participants && roomData.participants.length === 2) {
-          // Private 1:1 chat
-          const otherParticipantId = roomData.participants.find(id => id !== user.uid);
-          if (otherParticipantId) {
+        for (const docSnap of snapshot.docs) {
+          const data = docSnap.data();
+          const id = docSnap.id;
+
+          let chatTitle = data.name || "";
+          let avatar = null;
+          let isEventChat = false;
+          let isGroup = !!data.isGroupChat;
+          let isGlobal = id === "global-chat" || id === "global-volunteer-chat";
+
+          if (isGlobal) {
+            chatTitle = "Global Volunteer Chat";
+          } else if (id.startsWith("event_")) {
+            isEventChat = true;
+            const eventId = id.replace("event_", "");
             try {
-              const participantDoc = await getDoc(doc(db, 'users', otherParticipantId));
-              if (participantDoc.exists()) {
-                const participantData = participantDoc.data();
-                enrichedRoom.chatTitle = participantData.displayName || participantData.email || 'User';
-                enrichedRoom.avatar = participantData.photoURL || 'https://via.placeholder.com/50/666/ffffff?text=👤';
-              } else {
-                enrichedRoom.chatTitle = 'Private Chat';
-                enrichedRoom.avatar = 'https://via.placeholder.com/50/666/ffffff?text=👤';
+              const eventDoc = await getDoc(doc(db, "events", eventId));
+              if (eventDoc.exists) {
+                chatTitle = eventDoc.data().title || "Event Chat";
               }
-            } catch (error) {
-              console.error('Error fetching participant details:', error);
-              enrichedRoom.chatTitle = 'Private Chat';
-              enrichedRoom.avatar = 'https://via.placeholder.com/50/666/ffffff?text=👤';
+            } catch {}
+          } else if (isGroup) {
+            // group chat title already set
+          } else if (data.participants.length === 2) {
+            const otherId = data.participants.find((uid) => uid !== user.uid);
+            if (otherId) {
+              try {
+                const otherDoc = await getDoc(doc(db, "users", otherId));
+                if (otherDoc.exists) {
+                  const otherData = otherDoc.data();
+                  chatTitle = otherData.displayName || otherData.email || "Private Chat";
+                  avatar = otherData.photoURL || null;
+                }
+              } catch {}
             }
           }
-        } else {
-          // Fallback
-          enrichedRoom.chatTitle = roomData.name || 'Chat';
-          enrichedRoom.avatar = 'https://via.placeholder.com/50/999/ffffff?text=💬';
+
+          rooms.push({
+            id,
+            chatTitle,
+            avatar,
+            isEventChat,
+            lastMessage: data.lastMessage || "",
+            lastMessageTime: data.lastMessageTime || null,
+          });
         }
 
-        rooms.push(enrichedRoom);
-      }
         rooms.sort((a, b) => {
-    const timeA = a.lastMessageTime?.seconds || 0;
-    const timeB = b.lastMessageTime?.seconds || 0;
-    return timeB - timeA; 
-  });
-  
-      console.log('Processed chat rooms:', rooms.length);
-      setChatRooms(rooms);
-      setLoading(false);
-    }, (error) => {
-      console.error('Chat rooms listener error:', error);
-      setLoading(false);
-    });
+          const timeA = a.lastMessageTime?.seconds || 0;
+          const timeB = b.lastMessageTime?.seconds || 0;
+          return timeB - timeA;
+        });
 
-    return () => {
-      console.log('Cleaning up chat rooms listener');
-      unsubscribe();
-    };
+        setChatRooms(rooms);
+        setLoading(false);
+        setRefreshing(false);
+      },
+      (error) => {
+        Alert.alert("Error", "Failed to load chats: " + error.message);
+        setLoading(false);
+        setRefreshing(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, [user?.uid]);
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return "";
+    const date = timestamp.toDate ? timestamp.toDate() : new Date();
+    const now = new Date();
+    const diff = now - date;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return date.toLocaleDateString();
+  };
 
   const handleRefresh = () => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1000);
   };
 
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return '';
-    
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    const now = new Date();
-    const diffInHours = (now - date) / (1000 * 60 * 60);
-    
-    if (diffInHours < 24) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffInHours < 168) { // Less than a week
-      return date.toLocaleDateString([], { weekday: 'short' });
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-  };
-
-  const renderChatItem = ({ item }) => {
-    const lastMessageTime = formatTimestamp(item.lastMessageTime); // ← FIXED: Use correct field name
-    const chatTitle = item.chatTitle || 'Chat';
-    const avatarUri = item.avatar || 'https://via.placeholder.com/50/999/ffffff?text=💬';
-    const isGlobalChat = item.id === 'global-volunteer-chat';
-    const isEventChat = item.isEventChat || item.id.startsWith('event_');
+  const renderItem = ({ item }) => {
+    const lastMessageTime = formatTimestamp(item.lastMessageTime);
 
     return (
       <TouchableOpacity
         style={styles.chatItem}
-        onPress={() => navigation.navigate('Chat', {
-          chatRoomId: item.id,
-          chatTitle: chatTitle,
-          isEventChat: isEventChat,
-          eventId: isEventChat ? item.id.replace('event_', '') : null,
-        })}
+        onPress={() =>
+          navigation.navigate("Chat", {
+            chatRoomId: item.id,
+            chatTitle: item.chatTitle,
+            isEventChat: item.isEventChat,
+          })
+        }
       >
-        <View style={styles.avatarContainer}>
-          <Image source={{ uri: avatarUri }} style={styles.avatar} />
-          {isGlobalChat && (
-            <View style={styles.globalBadge}>
-              <Ionicons name="globe" size={12} color="#fff" />
-            </View>
-          )}
-          {isEventChat && !isGlobalChat && (
-            <View style={styles.eventBadge}>
-              <Ionicons name="calendar" size={12} color="#fff" />
-            </View>
-          )}
-        </View>
-
+        <View style={styles.avatarContainer}>{renderAvatar(item.avatar)}</View>
         <View style={styles.chatContent}>
           <View style={styles.chatHeader}>
-            <Text style={styles.chatName} numberOfLines={1}>
-              {chatTitle}
+            <Text numberOfLines={1} style={styles.chatTitle}>
+              {item.chatTitle}
             </Text>
-            <Text style={styles.timestamp}>{lastMessageTime}</Text>
+            <Text style={styles.chatTimestamp}>{lastMessageTime}</Text>
           </View>
-          
-          <View style={styles.lastMessageRow}>
-            <Text style={styles.lastMessage} numberOfLines={1}>
-              {item.lastMessage || 'No messages yet'}
-            </Text>
-          </View>
+          <Text numberOfLines={1} style={styles.chatLastMessage}>
+            {item.lastMessage || "No messages yet"}
+          </Text>
         </View>
       </TouchableOpacity>
     );
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name="chatbubbles-outline" size={64} color="#ccc" />
-      <Text style={styles.emptyTitle}>No Chats Yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Register for events to join their chat rooms
-      </Text>
-      <TouchableOpacity 
-        style={styles.emptyButton}
-        onPress={() => navigation.navigate('Events')}
-      >
-        <Text style={styles.emptyButtonText}>Browse Events</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading chats...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Chats</Text>
-        <TouchableOpacity 
-          style={styles.newChatButton}
-          onPress={() => {
-            // Navigate to global chat if no chats exist
-            navigation.navigate('Chat', {
-              chatRoomId: 'global-volunteer-chat',
-              chatTitle: 'Global Volunteer Chat',
-              isEventChat: false,
-            });
-          }}
-        >
-          <Ionicons name="chatbubbles-outline" size={24} color="#4CAF50" />
-        </TouchableOpacity>
+        {!isSearching ? (
+          <>
+            <Text style={styles.headerTitle}>Chats</Text>
+            <TouchableOpacity onPress={() => setIsSearching(true)} style={styles.searchIcon}>
+              <Ionicons name="search" size={24} color="#476397" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search chats..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+            onBlur={() => setIsSearching(false)}
+            returnKeyType="done"
+          />
+        )}
       </View>
 
-      {/* Chat List */}
-      <FlatList
-        data={chatRooms}
-        keyExtractor={(item) => item.id}
-        renderItem={renderChatItem}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-        contentContainerStyle={styles.chatList}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={renderEmptyState}
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4caf50" />
+        </View>
+      ) : (
+        <FlatList
+          data={filteredChatRooms}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="chatbubbles-outline" size={80} color="#bbb" />
+              <Text style={styles.emptyTitle}>No Chats Yet</Text>
+              <Text style={styles.emptySubText}>Browse events to join chats</Text>
+            </View>
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
+  container: { flex: 1, backgroundColor: "#fff" },
   header: {
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    backgroundColor: "#fff",
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    paddingBottom: 12,
     paddingHorizontal: 20,
-    paddingBottom: 15,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
+  headerTitle: { fontSize: 28, fontWeight: "bold", color: "#2c4472ff" },
+  searchIcon: { padding: 6 },
+  searchInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: "#333",
   },
-  newChatButton: {
-    padding: 5,
-  },
-  chatList: {
-    paddingVertical: 10,
-  },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  listContent: { paddingVertical: 10 },
   chatItem: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 15,
+    backgroundColor: "#fff",
+    borderBottomColor: "#f0f0f0",
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
-  avatarContainer: {
-    position: 'relative',
-    marginRight: 15,
-  },
+  avatarContainer: { marginRight: 15 },
   avatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: "#476397ff",
   },
-  globalBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: '#4CAF50',
-    borderRadius: 8,
-    width: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  eventBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: '#2196F3',
-    borderRadius: 8,
-    width: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chatContent: {
-    flex: 1,
-  },
+  chatContent: { flex: 1 },
   chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 5,
   },
-  chatName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    flex: 1,
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#999',
-    marginLeft: 10,
-  },
-  lastMessageRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  lastMessage: {
-    fontSize: 14,
-    color: '#666',
-    flex: 1,
-  },
+  chatTitle: { fontSize: 16.5, fontWeight: "600", color: "#0a0a0aff", flex: 1 },
+  chatTimestamp: { fontSize: 12, color: "#0a0a0aff", marginLeft: 8 },
+  chatLastMessage: { fontSize: 15, color: "#0a0a0aff" },
   emptyState: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
   },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  emptyButton: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 25,
-  },
-  emptyButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  emptyTitle: { fontSize: 20, fontWeight: "600", color: "#666", marginTop: 20 },
+  emptySubText: { fontSize: 16, color: "#999", marginTop: 8 },
 });

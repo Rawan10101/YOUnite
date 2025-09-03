@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginHorizontal: 16,
     marginVertical: 8,
-    padding: 16,
+    padding: 20,
     elevation: 3,
     shadowColor: "#000",
     shadowOpacity: 0.1,
@@ -397,13 +397,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   postOrgName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "700",
     color: "#222",
-    marginLeft: 12,
+    marginLeft: 10,
+    marginTop: 0
   },
   postCaption: {
-    fontSize: 14,
+    fontSize: 16,
     color: "#444",
     marginBottom: 12,
   },
