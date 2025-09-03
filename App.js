@@ -22,12 +22,12 @@ import ChatScreen from './screens/MainTabs/FeedScreen/ChatScreen';
 import CommentsScreen from './screens/MainTabs/FeedScreen/CommentsScreen';
 import CreateReportScreen from './screens/MainTabs/FeedScreen/CreateReportScreen';
 import FeedScreen from './screens/MainTabs/FeedScreen/FeedScreen';
-import OrganizationDetailsScreen from './screens/MainTabs/OrganizationDetailsScreen';
+import OrganizationDetailsScreen from './screens/org/OrganizationDetailsScreen';
 import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScreen';
 import ProfileDetailsScreen from './screens/MainTabs/ProfileScreen/ProfileDetailsScreen';
 import ProfileScreen from './screens/MainTabs/ProfileScreen/ProfileScreen';
 import SettingsScreen from './screens/MainTabs/ProfileScreen/SettingsScreen';
-
+import ReportsScreen from './screens/org/ReportsScreen';
 import VolunteerApplicationsScreen from './screens/org/VolunteerApplicationsScreen';
 
 import CreateEventScreen from './screens/org/CreateEventScreen';
@@ -155,7 +155,7 @@ function VolunteerTabs() {
 
       <Tab.Screen name="Events" component={EventsStackScreen} />
       
-      {/* NEW: Applications Tab for Volunteers */}
+      {/* NEW: Applications Tab for Volunteers
       <Tab.Screen 
         name="Applications" 
         component={ApplicationsStackScreen}
@@ -165,7 +165,7 @@ function VolunteerTabs() {
             <Ionicons name="document-text-outline" size={size} color={color} />
           ),
         }}
-      />
+      /> */}
       
       <Tab.Screen name="Profile" component={ProfileStackScreen} />
     </Tab.Navigator>
@@ -242,27 +242,27 @@ function ApplicationsStackScreen() {
   );
 }
 
-// VOLUNTEER STACK SCREENS
-function FeedStackScreen() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="FeedMain" component={FeedScreen} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
-      <Stack.Screen 
-        name="CreateReport" 
-        component={CreateReportScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen 
-        name="Comments" 
-        component={CommentsScreen} 
-        options={{ headerShown: false }} 
-      />
-      <Stack.Screen name="EventDetails" component={EventDetailsScreen} options={{ headerShown: true, title: 'Event Details' }} />
-      <Stack.Screen name="OrganizationDetails" component={OrganizationDetailsScreen} options={{ headerShown: true, title: 'Organization' }} />
-    </Stack.Navigator>
-  );
-}
+// // VOLUNTEER STACK SCREENS
+// function FeedStackScreen() {
+//   return (
+//     <Stack.Navigator screenOptions={{ headerShown: false }}>
+//       <Stack.Screen name="FeedMain" component={FeedScreen} />
+//       <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
+//       <Stack.Screen 
+//         name="CreateReport" 
+//         component={CreateReportScreen}
+//         options={{ headerShown: false }}
+//       />
+//       <Stack.Screen 
+//         name="Comments" 
+//         component={CommentsScreen} 
+//         options={{ headerShown: false }} 
+//       />
+//       <Stack.Screen name="EventDetails" component={EventDetailsScreen} options={{ headerShown: true, title: 'Event Details' }} />
+//       <Stack.Screen name="OrganizationDetails" component={OrganizationDetailsScreen} options={{ headerShown: true, title: 'Organization' }} />
+//     </Stack.Navigator>
+//   );
+// }
 
 function DiscoverStackScreen() {
   return (
@@ -373,9 +373,10 @@ function OrganizationDashboardStack() {
         component={EventDetailsScreen}
         options={{ headerShown: false, title: 'Event Details' }}
       />
+
       <Stack.Screen 
-        name="Chat" 
-        component={ChatScreen} 
+        name="ReportsScreen" 
+        component={ReportsScreen} 
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

@@ -134,6 +134,7 @@ export default function OrganizationDashboard({ navigation }) {
               }}
               style={styles.authorAvatar}
             />
+            
             <View style={styles.authorDetails}>
               <Text style={styles.authorName}>
                 {item.reporterName || 'Anonymous User'}
@@ -246,10 +247,13 @@ export default function OrganizationDashboard({ navigation }) {
         
         {/* Action Icon Buttons */}
         <View style={styles.actionIcons}>
+ 
+
           <TouchableOpacity
             style={[styles.iconButton, { backgroundColor: '#fff' }]}
             onPress={() => navigation.navigate('PostDetails')}
           >
+            
             <Ionicons name="add" size={26} color="#2B2B2B" />
           </TouchableOpacity>
           
@@ -259,6 +263,12 @@ export default function OrganizationDashboard({ navigation }) {
           >
             <Ionicons name="calendar-outline" size={26} color="#2B2B2B" />
           </TouchableOpacity>
+                   <TouchableOpacity
+  style={styles.iconButton}
+  onPress={() => navigation.navigate('ReportsScreen')}
+>
+  <Ionicons name="flag-outline" size={26} color="#2B2B2B" />
+</TouchableOpacity>
         </View>
       </View>
 

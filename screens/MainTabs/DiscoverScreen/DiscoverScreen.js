@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
-  Image,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  Image,
+  StyleSheet,
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';
@@ -22,7 +22,6 @@ export default function DiscoverScreen({ navigation }) {
   const [filteredOrganizations, setFilteredOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch organizations from Firestore
   useEffect(() => {
     setLoading(true);
     const unsubscribe = onSnapshot(collection(db, 'organizations'), (snapshot) => {
@@ -33,213 +32,111 @@ export default function DiscoverScreen({ navigation }) {
           ...data,
           isFollowing: user ? data.followers?.includes(user.uid) : false,
           followerCount: data.followers?.length || 0,
-          activityScore: calculateActivityScore(data),
-          isVerified: data.verified || false,
+          eventCount: data.upcomingEvents || 0,
         };
       });
 
-      // Sort by activity score and follower count
+      // Sort by most followers, then most events
       orgsData.sort((a, b) => {
-        if (a.activityScore !== b.activityScore) {
-          return b.activityScore - a.activityScore;
-        }
-        return b.followerCount - a.followerCount;
+        if (b.followerCount !== a.followerCount) return b.followerCount - a.followerCount;
+        return b.eventCount - a.eventCount;
       });
 
       setOrganizations(orgsData);
       setFilteredOrganizations(orgsData);
       setLoading(false);
     }, (error) => {
-      console.error('Error fetching organizations:', error);
-      Alert.alert('Error', 'Failed to load organizations. Please try again.');
+      Alert.alert('Error', 'Failed to load organizations.');
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [user]);
 
   useEffect(() => {
-    filterOrganizations();
-  }, [searchQuery, organizations]);
-
-  const calculateActivityScore = (orgData) => {
-    let score = 0;
-
-    // Recent activity boost
-    const lastActive = orgData.lastActive?.toDate ? orgData.lastActive.toDate() : new Date(orgData.lastActive || 0);
-    const daysSinceActive = (new Date() - lastActive) / (1000 * 60 * 60 * 24);
-    if (daysSinceActive <= 7) score += 10;
-    else if (daysSinceActive <= 30) score += 5;
-
-    // Event count boost
-    const eventCount = orgData.upcomingEvents || 0;
-    score += Math.min(eventCount * 2, 10);
-
-    // Follower boost
-    const followers = orgData.followers?.length || 0;
-    score += Math.min(Math.floor(followers / 10), 15);
-
-    // Verification boost
-    if (orgData.verified) score += 5;
-
-    return score;
-  };
-
-  const filterOrganizations = () => {
     let filtered = organizations;
-
-    // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(org =>
         org.name?.toLowerCase().includes(query) ||
         org.description?.toLowerCase().includes(query) ||
         org.location?.toLowerCase().includes(query) ||
-        org.category?.toLowerCase().includes(query) ||
-        org.tags?.some(tag => tag.toLowerCase().includes(query))
+        org.category?.toLowerCase().includes(query)
       );
     }
-
     setFilteredOrganizations(filtered);
+  }, [searchQuery, organizations]);
+
+  const handleFollow = async (orgId) => {
+    if (!user?.uid) {
+      Alert.alert('Error', 'You must be logged in to follow organizations.');
+      return;
+    }
+    const orgRef = doc(db, 'organizations', orgId);
+    const orgToUpdate = organizations.find(org => org.id === orgId);
+    if (!orgToUpdate) return;
+
+    try {
+      if (orgToUpdate.isFollowing) {
+        await updateDoc(orgRef, { followers: arrayRemove(user.uid) });
+        setFollowedOrganizations(prev => prev.filter(id => id !== orgId));
+      } else {
+        await updateDoc(orgRef, { followers: arrayUnion(user.uid) });
+        setFollowedOrganizations(prev => [...prev, orgId]);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update follow status.');
+    }
   };
 
-const handleFollow = async (orgId) => {
-  if (!user?.uid) {
-    Alert.alert('Error', 'You must be logged in to follow organizations.');
-    return;
-  }
-
-  const orgToUpdate = organizations.find(org => org.id === orgId);
-  if (!orgToUpdate) return;
-
-  try {
-    console.log('Updating organization followers for:', orgId);
-    const orgRef = doc(db, 'organizations', orgId);
-
-    if (orgToUpdate.isFollowing) {
-      // Unfollow - remove user from organization's followers
-      await updateDoc(orgRef, {
-        followers: arrayRemove(user.uid)
-      });
-      
-      setFollowedOrganizations(prev => prev.filter(id => id !== orgId));
-      console.log('Successfully unfollowed');
-      
-    } else {
-      // Follow - add user to organization's followers
-      await updateDoc(orgRef, {
-        followers: arrayUnion(user.uid)
-      });
-      
-      setFollowedOrganizations(prev => [...prev, orgId]);
-      console.log('Successfully followed');
-    }
-
-  } catch (error) {
-    console.error('Full error object:', error);
-    console.error('Error code:', error?.code);
-    console.error('Error message:', error?.message);
-    
-    let errorMessage = 'Failed to update follow status';
-    
-    if (error?.code === 'permission-denied') {
-      errorMessage = 'You do not have permission to perform this action';
-    } else if (error?.code === 'not-found') {
-      errorMessage = 'Organization not found';
-    } else if (error?.message) {
-      errorMessage = error.message;
-    }
-    
-    Alert.alert('Error', errorMessage);
-  }
-};
-
-
-
-  const getCategoryColor = (category) => {
+  const getColor = (key) => {
     const colors = {
-      'Environment': '#4CAF50',
-      'Education': '#9C27B0',
-      'Health': '#F44336',
-      'Animals': '#FF9800',
-      'Community': '#2196F3',
-      'Disaster Relief': '#FF5722',
+      'A': '#4e8cff',
+      'B': '#4CAF50',
+      'R': '#F44336',
+      'U': '#FFD93D',
+      'T': '#1976d2',
+      // default color
+      'default': '#BDBDBD',
     };
-    return colors[category] || '#666';
+    return colors[key] || colors['default'];
+  };
+
+  const renderLogo = (org) => {
+    if (org.logo) {
+      return <Image source={{ uri: org.logo }} style={styles.avatar} />;
+    } else {
+      // Render first letter avatar
+      const first = org.name?.charAt(0).toUpperCase() || '';
+      return (
+        <View style={[styles.avatar, { backgroundColor: getColor(first) }]}>
+          <Text style={styles.avatarLetter}>{first}</Text>
+        </View>
+      );
+    }
   };
 
   const renderOrganizationItem = ({ item, index }) => (
-    <Animatable.View
-      animation="fadeInUp"
-      delay={index * 50}
-      style={styles.organizationItem}
-    >
+    <Animatable.View animation="fadeInUp" delay={index * 40} style={styles.card}>
       <TouchableOpacity
+        style={styles.cardContent}
         onPress={() => navigation.navigate('OrganizationDetails', { organization: item })}
-        style={styles.organizationContent}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
       >
-        <View style={styles.logoContainer}>
-          <Image 
-            source={{ uri: item.logo || 'https://via.placeholder.com/60' }} 
-            style={styles.organizationLogo} 
-          />
-          {item.isVerified && (
-            <View style={styles.verifiedBadge}>
-              <Ionicons name="checkmark-circle" size={14} color="#4CAF50" />
-            </View>
-          )}
-        </View>
-
-        <View style={styles.organizationInfo}>
-          <View style={styles.nameRow}>
-            <Text style={styles.organizationName} numberOfLines={1}>
-              {item.name}
-            </Text>
-            {item.category && (
-              <View style={[styles.categoryTag, { backgroundColor: getCategoryColor(item.category) }]}>
-                <Text style={styles.categoryText}>{item.category}</Text>
-              </View>
-            )}
-          </View>
-          
-          {item.description && (
-            <Text style={styles.organizationDescription} numberOfLines={2}>
-              {item.description}
-            </Text>
-          )}
-          
-          <View style={styles.statsRow}>
-            {item.location && (
-              <Text style={styles.statItem}>
-                <Ionicons name="location-outline" size={12} color="#999" />
-                {' '}{item.location}
-              </Text>
-            )}
-            <Text style={styles.statItem}>
-              <Ionicons name="people-outline" size={12} color="#999" />
-              {' '}{item.followerCount} followers
-            </Text>
-            <Text style={styles.statItem}>
-              <Ionicons name="calendar-outline" size={12} color="#999" />
-              {' '}{item.upcomingEvents || 0} events
-            </Text>
+        {renderLogo(item)}
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.cardSubtitle}>{item.description || item.category || ' '}</Text>
+          <View style={styles.cardStats}>
+            <Text style={styles.stat}><Ionicons name="people-outline" size={14} color="#666" /> {item.followerCount} followers</Text>
+            <Text style={styles.stat}><Ionicons name="calendar-outline" size={14} color="#666" /> {item.eventCount} events</Text>
           </View>
         </View>
       </TouchableOpacity>
-
       <TouchableOpacity
-        style={[
-          styles.followButton,
-          item.isFollowing && styles.followingButton
-        ]}
+        style={[styles.followBtn, item.isFollowing && styles.followingBtn]}
         onPress={() => handleFollow(item.id)}
-        activeOpacity={0.8}
       >
-        <Text style={[
-          styles.followButtonText,
-          item.isFollowing && styles.followingButtonText
-        ]}>
+        <Text style={[styles.followTxt, item.isFollowing && styles.followingTxt]}>
           {item.isFollowing ? 'Following' : 'Follow'}
         </Text>
       </TouchableOpacity>
@@ -258,291 +155,115 @@ const handleFollow = async (orgId) => {
   return (
     <View style={styles.container}>
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons name="search" size={20} color="#999" />
+      <View style={styles.searchSection}>
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search" size={20} color="#888" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search organizations..."
-            placeholderTextColor="#666"
+            placeholderTextColor="#999"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={20} color="#999" />
+              <Ionicons name="close-circle" size={20} color="#bbb" />
             </TouchableOpacity>
           ) : null}
         </View>
       </View>
 
-      {/* Results Header */}
-      {filteredOrganizations.length > 0 && (
-        <View style={styles.resultsHeader}>
-          <Text style={styles.resultsText}>
-            {filteredOrganizations.length} organization{filteredOrganizations.length !== 1 ? 's' : ''}
-          </Text>
-        </View>
-      )}
+      <Text style={styles.popularHeader}>Top Organizations</Text>
 
-      {/* Organizations List */}
-      {filteredOrganizations.length > 0 ? (
-        <FlatList
-          data={filteredOrganizations}
-          keyExtractor={item => item.id}
-          renderItem={renderOrganizationItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.organizationsList}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-        />
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="search-outline" size={60} color="#666" />
-          <Text style={styles.emptyText}>No organizations found</Text>
-          <Text style={styles.emptySubtext}>
-            {searchQuery
-              ? 'Try adjusting your search terms'
-              : 'Check back later for new organizations'
-            }
-          </Text>
-          {searchQuery && (
-            <TouchableOpacity
-              style={styles.clearAllButton}
-              onPress={() => setSearchQuery('')}
-            >
-              <Text style={styles.clearAllText}>Clear search</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+      <FlatList
+        data={filteredOrganizations}
+        // horizontal={true}
+        keyExtractor={item => item.id}
+        renderItem={renderOrganizationItem}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="search-outline" size={52} color="#bbb" />
+            <Text style={styles.emptyText}>No organizations found</Text>
+          </View>
+        )}
+      />
     </View>
   );
 }
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  
-  // Search Container
-  searchContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 30,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  
-  searchInputContainer: {
+  container: { flex: 1, backgroundColor: '#fff' },
+searchSection: {
+  paddingHorizontal: 20,
+  paddingTop: 50,  // Increased paddingTop to move search bar down
+  paddingBottom: 6,
+  backgroundColor: '#fff',
+},  searchInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#2B2B2B',
-    marginLeft: 12,
-    marginRight: 8,
-  },
-  
-  // Results Header
-  resultsHeader: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  
-  resultsText: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  
-  // Organization List
-  organizationsList: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  
-  organizationItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  
-  organizationContent: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  
-  separator: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginHorizontal: 20,
-  },
-  
-  // Logo Container
-  logoContainer: {
-    position: 'relative',
-    marginRight: 16,
-  },
-  
-  organizationLogo: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#F5F5F5',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F4F6FB',
     borderRadius: 10,
-    padding: 2,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  
-  // Organization Info
-  organizationInfo: {
-    flex: 1,
-  },
-  
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  
-  organizationName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2B2B2B',
-    flex: 1,
-  },
-  
-  categoryTag: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 12,
+    borderWidth: 1,
+    borderColor: '#ececec',
   },
-  
-  categoryText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  
-  organizationDescription: {
-    fontSize: 14,
-    color: '#666666',
+  searchInput: { flex: 1, fontSize: 16, color: '#2B2B2B', marginLeft: 8 },
+  popularHeader: {
+    marginLeft: 22,
+    marginTop: 10,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#222',
     marginBottom: 8,
-    lineHeight: 20,
   },
-  
-  statsRow: {
+  listContainer: { paddingHorizontal: 14, paddingBottom: 16 },
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    backgroundColor: '#fafbff',
+    borderRadius: 16,
+    padding: 14,
+    elevation: 1,
+    shadowColor: '#ececec',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 4,
   },
-  
-  statItem: {
-    fontSize: 12,
-    color: '#999999',
+  cardContent: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     marginRight: 16,
-    marginBottom: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  
-  // Follow Button
-  followButton: {
-    backgroundColor: '#2B2B2B',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+  avatarLetter: { fontSize: 22, fontWeight: '700', color: '#fff' },
+  cardInfo: { flex: 1 },
+  cardTitle: { fontSize: 17, fontWeight: '600', color: '#263238' },
+  cardSubtitle: { fontSize: 13, color: '#75838f', marginVertical: 2 },
+  cardStats: { flexDirection: 'row', marginTop: 6 },
+  stat: { color: '#989898', fontSize: 13, marginRight: 18 },
+  followBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 20,
-    minWidth: 90,
+    backgroundColor: '#222',
     alignItems: 'center',
-    marginLeft: 12,
+    minWidth: 85,
   },
-  
-  followingButton: {
-    backgroundColor: 'transparent',
+  followTxt: { color: '#fff', fontWeight: '500', fontSize: 14 },
+  followingBtn: {
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#2B2B2B',
+    borderColor: '#222',
   },
-  
-  followButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  
-  followingButtonText: {
-    color: '#2B2B2B',
-  },
-  
-  // Loading Container
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-  },
-  
-  // Empty State
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingTop: 80,
-  },
-  
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#2B2B2B',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  
-  emptySubtext: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  
-  clearAllButton: {
-    backgroundColor: '#2B2B2B',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 25,
-    marginTop: 24,
-  },
-  
-  clearAllText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
+  followingTxt: { color: '#222' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  loadingText: { marginTop: 16, fontSize: 16, color: '#888', textAlign: 'center' },
+  emptyContainer: { alignItems: 'center', marginTop: 40 },
+  emptyText: { fontSize: 16, color: '#888', marginTop: 10 },
 });
