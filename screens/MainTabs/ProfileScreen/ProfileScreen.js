@@ -1,8 +1,20 @@
+// Imports
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
 import {
-  collection, doc, getDoc, limit, onSnapshot, orderBy, query,
-  where
+  collection,
+  doc,
+  getDoc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  updateDoc
 } from 'firebase/firestore';
+import * as ImagePicker from 'expo-image-picker';
+import { getAuth, updateProfile } from 'firebase/auth';
+import { getStorage, ref, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -16,53 +28,61 @@ import {
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';
 import { db } from '../../../firebaseConfig';
-// Add this component at the top of your ProfileScreen file, after imports
-const ProfileAvatar = ({ photoURL, displayName, size = 100 }) => {
+
+// Profile avatar component
+const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
   const getInitials = (name) => {
-    if (!name) return 'V'; // Default to 'V' for Volunteer
+    if (!name) return "V";
     return name
-      .split(' ')
-      .map(word => word[0])
-      .join('')
+      .split(" ")
+      .map((word) => word[0])
+      .join("")
       .toUpperCase()
       .substring(0, 2);
   };
-  
   const getAvatarColor = (name) => {
-    const colors = ['#4e8cff', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF'];
-    if (!name) return colors;
+    const colors = [
+      "#4e8cff", "#FF6B6B", "#4ECDC4", "#45B7D1",
+      "#96CEB4", "#FECA57", "#FF9FF3", "#54A0FF",
+    ];
+    if (!name) return colors[0];
     const index = name.length % colors.length;
     return colors[index];
   };
-
-  // Only show default if user has NO profile image set (photoURL is null/undefined)
-  if (!photoURL) {
-    return (
-      <View style={[
-        styles.defaultAvatar, 
-        { 
-          width: size, 
-          height: size, 
-          borderRadius: size / 2,
-          backgroundColor: getAvatarColor(displayName)
-        }
-      ]}>
-        <Text style={[styles.avatarText, { fontSize: size * 0.4 }]}>
-          {getInitials(displayName)}
-        </Text>
-      </View>
-    );
-  }
-
-  // If user has set a profile image, always try to show it (no fallback on error)
   return (
-    <Image 
-      source={{ uri: photoURL }} 
-      style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
-    />
+    <View style={{ width: size, height: size }}>
+      {!photoURL ? (
+        <View
+          style={[
+            styles.defaultAvatar,
+            {
+              width: size, height: size,
+              borderRadius: size / 2,
+              backgroundColor: getAvatarColor(displayName),
+            },
+          ]}
+        >
+          <Text style={[styles.avatarText, { fontSize: size * 0.4 }]}>
+            {getInitials(displayName)}
+          </Text>
+        </View>
+      ) : (
+        <Image
+          source={{ uri: photoURL }}
+          style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+        />
+      )}
+      <TouchableOpacity
+        style={[styles.addIconContainer, { right: size * 0.1, bottom: size * 0.1 }]}
+        onPress={onPressAdd}
+      >
+        <Ionicons name="add-circle" size={size * 0.25} color="#4CAF50" />
+      </TouchableOpacity>
+    </View>
   );
 };
 
+// Main ProfileScreen
 export default function ProfileScreen({ navigation }) {
   const { user, setUser, followedOrganizations } = useAppContext();
   const [userStats, setUserStats] = useState({
@@ -77,13 +97,13 @@ export default function ProfileScreen({ navigation }) {
   useEffect(() => {
     if (user?.uid) {
       fetchUserData();
-      setupActivityListener();
+      const unsubscribe = setupActivityListener();
+      return () => unsubscribe && unsubscribe();
     }
   }, [user?.uid, followedOrganizations]);
 
   const fetchUserData = async () => {
     try {
-      // Get user document for additional stats
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();
@@ -103,38 +123,29 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const setupActivityListener = () => {
-    // Listen to user's posts for recent activity
     const userPostsQuery = query(
       collection(db, 'posts'),
       where('authorId', '==', user.uid),
       orderBy('createdAt', 'desc'),
       limit(5)
     );
-
     const unsubscribe = onSnapshot(userPostsQuery, (querySnapshot) => {
       const activities = [];
-      
       querySnapshot.docs.forEach(doc => {
         const postData = doc.data();
         activities.push({
           id: doc.id,
           type: postData.type === 'report' ? 'report_created' : 'post_created',
-          title: postData.type === 'report' 
-            ? 'Created a new report' 
-            : 'Shared a new post',
-          date: postData.createdAt?.toDate ? 
-            getTimeAgo(postData.createdAt.toDate()) : 
-            'Recently',
+          title: postData.type === 'report' ? 'Created a new report' : 'Shared a new post',
+          date: postData.createdAt?.toDate ? getTimeAgo(postData.createdAt.toDate()) : 'Recently',
           icon: postData.type === 'report' ? 'flag' : 'chatbox',
           color: postData.type === 'report' ? '#E33F3F' : '#4e8cff',
         });
       });
-
       setRecentActivities(activities);
     }, (error) => {
       console.error('Error fetching activities:', error);
     });
-
     return unsubscribe;
   };
 
@@ -142,7 +153,6 @@ export default function ProfileScreen({ navigation }) {
     const now = new Date();
     const diffInMs = now - date;
     const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-    
     if (diffInDays === 0) return 'Today';
     if (diffInDays === 1) return '1 day ago';
     if (diffInDays < 7) return `${diffInDays} days ago`;
@@ -156,18 +166,61 @@ export default function ProfileScreen({ navigation }) {
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
-          style: 'destructive',
-          onPress: () => setUser(null)
-        },
+        { text: 'Logout', style: 'destructive', onPress: () => setUser(null) },
       ]
     );
   };
+const handleAddProfileImage = async () => {
+  // 1. Request permission
+  const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permissionResult.granted) {
+    Alert.alert(
+      "Permission Denied",
+      "Permission to access media library is required!"
+    );
+    return;
+  }
 
-  const handleEditProfile = () => {
-    Alert.alert('Edit Profile', 'Profile editing feature coming soon!');
-  };
+  // 2. Pick image
+  const pickerResult = await ImagePicker.launchImageLibraryAsync({
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.7,
+  });
+
+  if (pickerResult.canceled) return;
+
+  const imageUri = pickerResult.assets?.[0]?.uri;
+  if (!imageUri) return;
+
+  try {
+    const auth = getAuth();
+    const storage = getStorage();
+    const user = auth.currentUser;
+
+    // 3. Convert file URI → Blob
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+
+    // 4. Upload to Firebase Storage
+    const storageRef = ref(storage, `profileImages/${user.uid}.jpg`);
+    await uploadBytes(storageRef, blob);
+
+    // 5. Get download URL
+    const downloadURL = await getDownloadURL(storageRef);
+
+    // 6. Update Firebase Auth profile + Firestore
+    await updateProfile(user, { photoURL: downloadURL });
+    await updateDoc(doc(db, "users", user.uid), { photoURL: downloadURL });
+
+    setUser((prev) => ({ ...prev, photoURL: downloadURL }));
+
+    Alert.alert("Success", "Profile image updated successfully!");
+  } catch (error) {
+    console.error("Error uploading profile image:", error);
+    Alert.alert("Error", "Failed to upload profile image.");
+  }
+};
 
   const renderStatCard = (title, value, icon, color) => (
     <Animatable.View
@@ -202,51 +255,15 @@ export default function ProfileScreen({ navigation }) {
     </Animatable.View>
   );
 
-const menuItems = [
-  {
-    id: '1',
-    title: 'Edit Profile',
-    icon: 'create-outline',
-    onPress: () => navigation.navigate('EditProfile'),
-  },
-  {
-    id: '2',
-    title: 'Profile Details',
-    icon: 'person-circle-outline',
-    onPress: () => navigation.navigate('ProfileDetails'),
-  },
-  {
-    id: '3',
-    title: 'My Events',
-    icon: 'calendar-outline',
-    onPress: () => navigation.navigate('Events', { screen: 'EventsMain' }),
-  },
-  {
-    id: '4',
-    title: 'Followed Organizations',
-    icon: 'heart-outline',
-    onPress: () => navigation.navigate('DiscoverMain'),
-  },
-  {
-    id: '5',
-    title: 'My Reports',
-    icon: 'flag-outline',
-    onPress: () => Alert.alert('Reports', 'My Reports page coming soon!'),
-  },
-  {
-    id: '6',
-    title: 'Settings',
-    icon: 'settings-outline',
-    onPress: () => navigation.navigate('Settings'),
-  },
-  {
-    id: '7',
-    title: 'Help & Support',
-    icon: 'help-circle-outline',
-    onPress: () => Alert.alert('Help', 'Help & Support coming soon!'),
-  },
-];
-
+  const menuItems = [
+    { id: '1', title: 'Edit Profile', icon: 'create-outline', onPress: () => navigation.navigate('EditProfile') },
+    { id: '2', title: 'Profile Details', icon: 'person-circle-outline', onPress: () => navigation.navigate('ProfileDetails') },
+    { id: '3', title: 'My Events', icon: 'calendar-outline', onPress: () => navigation.navigate('Events', { screen: 'EventsMain' }) },
+    { id: '4', title: 'Followed Organizations', icon: 'heart-outline', onPress: () => navigation.navigate('DiscoverMain') },
+    { id: '5', title: 'My Reports', icon: 'flag-outline', onPress: () => Alert.alert('Reports', 'My Reports page coming soon!') },
+    { id: '6', title: 'Settings', icon: 'settings-outline', onPress: () => navigation.navigate('Settings') },
+    { id: '7', title: 'Help & Support', icon: 'help-circle-outline', onPress: () => Alert.alert('Help', 'Help & Support coming soon!') },
+  ];
 
   if (loading) {
     return (
@@ -261,22 +278,20 @@ const menuItems = [
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Profile Info */}
- {/* Profile Info - Clean & Simple */}
-<Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
-  {/* Profile Avatar & Name */}
-  <View style={styles.profileInfo}>
-    <ProfileAvatar 
-      photoURL={user?.photoURL} 
-      displayName={user?.displayName || user?.email?.split('@')[0]} 
-      size={80}
-    />
-    <Text style={styles.userName}>
-      {user?.displayName || user?.email?.split('@') || 'Volunteer'}
-    </Text>
-  </View>
-</Animatable.View>
-      {/* Stats */}
+      <Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
+        <View style={styles.profileInfo}>
+          <ProfileAvatar
+            photoURL={user?.photoURL}
+            displayName={user?.displayName || user?.email?.split('@')[0]}
+            size={80}
+            onPressAdd={handleAddProfileImage}
+          />
+          <Text style={styles.userName}>
+            {user?.displayName || user?.email?.split('@')[0] || 'Volunteer'}
+          </Text>
+        </View>
+      </Animatable.View>
+
       <View style={styles.statsSection}>
         <Text style={styles.sectionTitle}>Your Impact</Text>
         <View style={styles.statsGrid}>
@@ -287,7 +302,6 @@ const menuItems = [
         </View>
       </View>
 
-      {/* Recent Activity */}
       {recentActivities.length > 0 && (
         <View style={styles.activitySection}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
@@ -299,7 +313,6 @@ const menuItems = [
         </View>
       )}
 
-      {/* Menu Items */}
       <View style={styles.menuSection}>
         {menuItems.map((item, index) => (
           <Animatable.View
@@ -319,7 +332,6 @@ const menuItems = [
         ))}
       </View>
 
-      {/* Logout Button */}
       <Animatable.View animation="fadeInUp" duration={800} style={styles.logoutSection}>
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color="#FF4757" />
@@ -337,7 +349,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-
   avatar: {
     borderWidth: 3,
     borderColor: '#fff',
@@ -347,7 +358,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
- defaultAvatar: {
+  defaultAvatar: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
@@ -362,82 +373,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-
-  profileSection: {
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    paddingVertical: 30, // Fixed the padding
-    marginBottom: 12,
-  },
-  profileInfo: {
-    alignItems: 'center',
-  },
-    userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2B2B2B',
-    marginTop: 15,
-    textAlign: 'center',
-  },
-
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 15,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2B2B2B',
-  },
   profileSection: {
     backgroundColor: '#fff',
     alignItems: 'center',
     paddingVertical: 30,
     marginBottom: 12,
   },
-  avatar: {
-    width: 50,
-    height: 30,
-    borderRadius: 50,
-    marginBottom: 15,
+  profileInfo: {
+    alignItems: 'center',
   },
   userName: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#2B2B2B',
-    marginBottom: 5,
+    marginTop: 15,
+    textAlign: 'center',
   },
-  userEmail: {
-    fontSize: 16,
-    color: '#2B2B2B',
-    marginBottom: 5,
-  },
-  joinDate: {
-    fontSize: 14,
-    color: '#2B2B2B',
-    marginBottom: 20,
-  },
-  editButton: {
-    flexDirection: 'row',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#2B2B2B',
   },
-  editButtonText: {
-    color: '#2B2B2B',
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#4e8cff',
   },
   statsSection: {
     backgroundColor: '#fff',
@@ -480,34 +440,6 @@ const styles = StyleSheet.create({
     color: '#2B2B2B',
     marginTop: 2,
   },
-  badgesSection: {
-    backgroundColor: '#fff',
-    padding: 20,
-    marginBottom: 20,
-  },
-  badgesList: {
-    flexDirection: 'row',
-    paddingRight: 20,
-  },
-  badge: {
-    alignItems: 'center',
-    marginRight: 20,
-    width: 80,
-  },
-  badgeIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  badgeName: {
-    fontSize: 12,
-    color: '#333',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
   activitySection: {
     backgroundColor: '#fff',
     padding: 20,
@@ -540,28 +472,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#2B2B2B',
     marginTop: 2,
-  },
-  settingsSection: {
-    backgroundColor: '#fff',
-    padding: 20,
-    marginBottom: 20,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settingText: {
-    fontSize: 16,
-    color: '#2B2B2B',
-    marginLeft: 12,
   },
   menuSection: {
     backgroundColor: '#fff',
@@ -607,5 +517,10 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 20,
+  },
+  addIconContainer: {
+    position: 'absolute',
+    backgroundColor: '#fff',
+    borderRadius: 50,
   },
 });

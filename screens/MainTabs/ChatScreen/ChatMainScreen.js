@@ -59,7 +59,7 @@ export default function ChatMainScreen() {
             width: size,
             height: size,
             borderRadius: size / 2,
-            backgroundColor: "#2c4472ff",
+            backgroundColor: "#476397",
             justifyContent: "center",
             alignItems: "center",
           },
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#fff",
     borderBottomWidth: 1,
   },
-  headerTitle: { fontSize: 28, fontWeight: "bold", color: "#2c4472ff" },
+  headerTitle: { fontSize: 28, fontWeight: "bold", color: "#2B2B2B" },
   searchIcon: { padding: 6 },
   searchInput: {
     flex: 1,
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: "#476397ff",
+    backgroundColor: "#2567e2ff",
   },
   chatContent: { flex: 1 },
   chatHeader: {

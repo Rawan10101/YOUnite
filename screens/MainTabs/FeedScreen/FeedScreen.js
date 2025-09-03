@@ -5,12 +5,14 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
-  RefreshControl,
+  TextInput,
   ScrollView,
-  Alert,
+  RefreshControl,
   StyleSheet,
+  Platform,
   Dimensions,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import * as Animatable from "react-native-animatable";
 import {
   collection,
@@ -23,17 +25,21 @@ import {
   limit,
 } from "firebase/firestore";
 import { db } from "../../../firebaseConfig";
-import { Ionicons } from "@expo/vector-icons";
 
 const screenWidth = Dimensions.get("window").width;
-const CARD_GAP = 16;
+const CARD_GAP = 9;
 const CARD_WIDTH = (screenWidth - 3 * CARD_GAP) / 2;
 
-export default function FeedScreen({ navigation }) {
+export default function Feed({ navigation }) {
   const [popularEvents, setPopularEvents] = useState([]);
   const [posts, setPosts] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+  const [filteredOrganizations, setFilteredOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const getColor = (letter) => {
     const colors = {
@@ -78,257 +84,545 @@ export default function FeedScreen({ navigation }) {
   useEffect(() => {
     const today = new Date();
 
-    const unsubscribeEvents = onSnapshot(
+    // Organizations fetch
+    const unsubOrgs = onSnapshot(
+      collection(db, "organizations"),
+      (snapshot) => {
+        const orgs = snapshot.docs
+          .map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              followerCount: data.followers?.length ?? 0,
+              eventCount: data.upcomingEvents ?? 0,
+            };
+          })
+          .sort(
+            (a, b) => b.followerCount - a.followerCount || b.eventCount - a.eventCount
+          );
+        setOrganizations(orgs);
+        setFilteredOrganizations(orgs);
+      },
+      () => {}
+    );
+
+    // Events fetch
+    const unsubEvents = onSnapshot(
       query(
         collection(db, "events"),
         where("date", ">=", today),
-        orderBy("date", "asc"),
+        orderBy("date"),
         limit(10)
       ),
-      async (snapshot) => {
-        const events = [];
-        for (const docSnap of snapshot.docs) {
-          const data = docSnap.data();
-          const orgId = data.organizationId;
-          let orgData = null;
-          if (orgId) {
-            const orgSnap = await getDoc(doc(db, "organizations", orgId));
-            if (orgSnap.exists) orgData = orgSnap.data();
-          }
-          events.push({
-            id: docSnap.id,
-            ...data,
-            organizationName: orgData?.name || "",
-            organizationAvatar: orgData?.logo || null,
-            dateObj: data.date?.toDate ? data.date.toDate() : new Date(data.date),
+      (snapshot) => {
+        const events = snapshot.docs
+          .map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              dateObj: data.date?.toDate ? data.date.toDate() : new Date(data.date),
+              participantCount: data.participants?.length ?? 0,
+            };
           });
-        }
         setPopularEvents(events);
-        setLoading(false);
-        setRefreshing(false);
       },
-      (error) => {
-        Alert.alert("Error", "Failed to load popular events: " + error.message);
-        setLoading(false);
-        setRefreshing(false);
-      }
+      () => {}
     );
 
-    const unsubscribePosts = onSnapshot(
-      query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(40)),
+    // Posts fetch with org info enrichment
+    const unsubPosts = onSnapshot(
+      query(
+        collection(db, "posts"),
+        orderBy("createdAt", "desc"),
+        limit(40)
+      ),
       async (snapshot) => {
-        const postsData = [];
-        const orgIdsSet = new Set();
-
-        snapshot.docs.forEach((docSnap) => {
-          const d = docSnap.data();
-          postsData.push({ id: docSnap.id, ...d });
-          if (d.authorId) orgIdsSet.add(d.authorId);
+        const postsArr = [];
+        const orgIds = new Set();
+        snapshot.docs.forEach((doc) => {
+          const d = doc.data();
+          postsArr.push({ id: doc.id, ...d });
+          if (d.authorId) orgIds.add(d.authorId);
         });
-
-        const orgDocs = await Promise.all(
-          Array.from(orgIdsSet).map((id) => getDoc(doc(db, "organizations", id)))
-        );
-
+        let orgDocs = [];
+        if (orgIds.size > 0) {
+          orgDocs = await Promise.all(
+            Array.from(orgIds).map((id) => getDoc(doc(db, "organizations", id)))
+          );
+        }
         const orgMap = {};
-        orgDocs.forEach((orgSnap) => {
-          if (orgSnap.exists) orgMap[orgSnap.id] = orgSnap.data();
+        orgDocs.forEach((d) => {
+          if (d.exists()) {
+            orgMap[d.id] = d.data();
+          }
         });
-
-        const postsWithOrg = postsData.map((post) => ({
-          ...post,
-          organizationName: orgMap[post.authorId]?.name || "",
-          organizationAvatar: orgMap[post.authorId]?.logo || null,
-        }));
-
-        setPosts(postsWithOrg);
+        setPosts(
+          postsArr.map((post) => ({
+            ...post,
+            organizationName: orgMap[post.authorId]?.name ?? "",
+            organizationAvatar: orgMap[post.authorId]?.logo ?? null,
+          }))
+        );
       },
-      (error) => {
-        Alert.alert("Error", "Failed to load posts: " + error.message);
-      }
+      () => {}
     );
 
     return () => {
-      unsubscribeEvents();
-      unsubscribePosts();
+      unsubOrgs();
+      unsubEvents();
+      unsubPosts();
     };
   }, []);
+
+  // Filter organizations with search term
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredOrganizations(organizations);
+    } else {
+      const q = searchQuery.toLowerCase();
+      const filtered = organizations.filter(
+        (org) =>
+          org.name?.toLowerCase().includes(q) ||
+          org.description?.toLowerCase().includes(q) ||
+          org.location?.toLowerCase().includes(q) ||
+          org.category?.toLowerCase().includes(q)
+      );
+      setFilteredOrganizations(filtered);
+    }
+  }, [searchQuery, organizations]);
 
   const onRefresh = () => {
     setRefreshing(true);
     setLoading(true);
   };
 
+  // Format date helper
   const formatDate = (dateObj) => {
     if (!dateObj) return "";
     try {
-      return dateObj instanceof Date
-        ? dateObj.toLocaleDateString()
-        : new Date(dateObj).toLocaleDateString();
+      if (dateObj instanceof Date) return dateObj.toLocaleDateString();
+      return new Date(dateObj).toLocaleDateString();
     } catch {
       return "";
     }
   };
 
-  const renderEvent = ({ item, index }) => (
-    <Animatable.View
-      animation="fadeInLeft"
-      delay={index * 80}
-      style={[
-        styles.horizontalCard,
-        {
-          width: CARD_WIDTH,
-          marginLeft: index === 0 ? CARD_GAP : CARD_GAP / 2,
-          marginRight: index % 2 === 1 ? CARD_GAP : CARD_GAP / 2,
-        },
-      ]}
+const renderEvent = ({ item, index }) => (
+  <Animatable.View
+    animation="fadeInLeft"
+    delay={index * 80}
+    style={[
+      styles.eventCard,
+      {
+        marginLeft: index === 0 ? CARD_GAP : CARD_GAP / 2,
+        marginRight: CARD_GAP / 2,
+      },
+    ]}
+  >
+    <TouchableOpacity
+      style={{ flex: 1 }}
+      onPress={() => navigation.navigate("EventDetails", { event: item })}
+      activeOpacity={0.92}
     >
-      {renderAvatar(item.organizationAvatar, item.organizationName, 56)}
-      <View style={styles.eventInfo}>
-        <Text style={styles.eventTitle} numberOfLines={2} ellipsizeMode="tail">
+      <Image
+        source={{ uri: item.coverImage || 'https://via.placeholder.com/400x180.png?text=Event' }}
+        style={styles.eventImage}
+      />
+      <View style={styles.cardDivider} />
+      <View style={styles.eventContent}>
+        <Text style={styles.eventTitle} numberOfLines={1}>
           {item.title}
         </Text>
-        <Text style={styles.organizationName} numberOfLines={1} ellipsizeMode="tail">
+        <Text style={styles.eventOrg} numberOfLines={1}>
           {item.organizationName}
         </Text>
+        <Text style={styles.eventLocation} numberOfLines={1}>
+          {item.place || "Unknown location"}
+        </Text>
+        <Text style={styles.eventMeta}>
+          {item.participantCount} participant{item.participantCount === 1 ? "" : "s"}
+        </Text>
         <Text style={styles.eventDate}>{formatDate(item.dateObj)}</Text>
-        <TouchableOpacity
-          style={styles.registerButton}
-          onPress={() => navigation.navigate("EventRegistration", { eventId: item.id })}
-        >
-          <Text style={styles.registerButtonText}>Register</Text>
-        </TouchableOpacity>
       </View>
-    </Animatable.View>
-  );
+    </TouchableOpacity>
+  </Animatable.View>
+);
+
+
+
+const renderOrganization = ({ item }) => (
+  <Animatable.View animation="fadeInUp" style={styles.organizationCard}>
+    <TouchableOpacity
+      style={styles.organizationContent}
+      onPress={() => navigation.navigate("OrganizationDetails", { organization: item })}
+      activeOpacity={0.8}
+    >
+      {item.logo ? (
+        <Image source={{ uri: item.logo }} style={styles.organizationAvatar} />
+      ) : (
+        <View style={[styles.organizationAvatar, { backgroundColor: "#476397" }]}>
+          <Text style={styles.organizationAvatarLetter}>
+            {(item.name?.charAt(0) ?? "?").toUpperCase()}
+          </Text>
+        </View>
+      )}
+      <View style={styles.organizationInfo}>
+        <Text style={styles.organizationName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={styles.organizationCategory} numberOfLines={1}>
+          {item.category || ""}
+        </Text>
+        <Text style={styles.organizationStats} numberOfLines={1}>
+          <Ionicons name="people-outline" size={14} color="#666" /> {item.followerCount} followers • {item.eventCount} events
+        </Text>
+      </View>
+    </TouchableOpacity>
+
+    <TouchableOpacity style={styles.followButton}>
+      <Text style={styles.followButtonText}>Follow</Text>
+    </TouchableOpacity>
+  </Animatable.View>
+);
+
 
   const renderPost = ({ item }) => (
-    <Animatable.View style={styles.postCard} animation="fadeInUp">
+    <Animatable.View animation="fadeInUp" style={styles.postCard}>
       <View style={styles.postHeader}>
-        {renderAvatar(item.organizationAvatar, item.organizationName, 32)}
-        <Text style={styles.postOrgName}>{item.organizationName}</Text>
+        {item.organizationAvatar ? (
+          <Image source={{ uri: item.organizationAvatar }} style={styles.postAvatar} />
+        ) : (
+          <View style={[styles.postAvatar, { backgroundColor: "#476397" }]}>
+            <Text style={styles.postAvatarLetter}>{item.organizationName?.charAt(0).toUpperCase()}</Text>
+          </View>
+        )}
+        <Text style={styles.postOrganization}>{item.organizationName}</Text>
       </View>
-      <Text style={styles.postCaption}>{item.caption || item.text}</Text>
+      <Text style={styles.postText}>{item.caption || item.text}</Text>
       {item.imageUrl && <Image source={{ uri: item.imageUrl }} style={styles.postImage} />}
       <View style={styles.postActions}>
-        <TouchableOpacity>
-          <Ionicons name="heart-outline" size={24} color="#444" />
-        </TouchableOpacity>
-        <TouchableOpacity>
-          <Ionicons name="chatbubble-outline" size={24} color="#444" />
-        </TouchableOpacity>
-        <TouchableOpacity>
-          <Ionicons name="share-social-outline" size={24} color="#444" />
-        </TouchableOpacity>
+        <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
+        <TouchableOpacity><Ionicons name="chatbubble-outline" size={24} color="#444" /></TouchableOpacity>
+        <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity>
       </View>
     </Animatable.View>
   );
 
-  if (loading)
-    return (
-      <View style={styles.loadingContainer}>
-        <Ionicons name="calendar" size={50} color="#2B2B2B" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-
   return (
-    <View style={styles.outerContainer}>
-      <View style={styles.topBar}>
-        <Text style={styles.appName}>YOUnite</Text>
-        <View style={styles.topBarButtons}>
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="search" size={28} color="#2B2B2B" />
-          </TouchableOpacity>
-         <TouchableOpacity
-  style={styles.iconButton}
-  onPress={() => navigation.navigate('CreateReport')}
->
-  <Ionicons name="flag-outline" size={28} color="rgba(5, 5, 5, 0.73)" />
-</TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconButton}>
-            <Ionicons name="notifications-outline" size={28} color="#2B2B2B" />
-          </TouchableOpacity>
-        </View>
+    <View style={styles.container}>
+  <View style={styles.topBar}>
+  {!searchActive ? (
+    <>
+      <Text style={styles.appName}>YOUnite</Text>
+      <View style={styles.topActions}>
+        <TouchableOpacity onPress={() => setSearchActive(true)} style={styles.iconButton}>
+          <Ionicons name="search" size={28} color="#2B2B2B" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate("CreateReport")} style={styles.iconButton}>
+          <Ionicons name="flag-outline" size={28} color="rgba(5,5,5,0.73)" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate("Notifications")} style={styles.iconButton}>
+          <Ionicons name="notifications-outline" size={28} color="#2B2B2B" />
+        </TouchableOpacity>
       </View>
+    </>
+  ) : (
+    <View style={styles.searchBarWrapper}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={20} color="#888" />
+        <TextInput
+          style={styles.searchInput}
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          placeholder="Search organizations..."
+          autoFocus
+          returnKeyType="done"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <Ionicons name="close-circle" size={20} color="#bbb" />
+          </TouchableOpacity>
+        )}
+      </View>
+      <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchActive(false); }} style={styles.cancelButton}>
+        <Text style={styles.cancelText}>Cancel</Text>
+      </TouchableOpacity>
+    </View>
+  )}
+</View>
 
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        <View style={{ marginVertical: 16 }}>
-          <Text style={styles.sectionTitle}>Popular Events</Text>
-          <FlatList
-            data={popularEvents}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => item.id}
-            renderItem={renderEvent}
-            contentContainerStyle={{ paddingHorizontal: CARD_GAP / 2 }}
-          />
-        </View>
 
-        <View style={{ marginVertical: 16 }}>
-          <Text style={styles.sectionTitle}>Posts</Text>
+
+
+      <ScrollView keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
+        setRefreshing(true);
+        setLoading(true);
+      }} />}>
+
+        {searchActive && searchQuery.trim().length > 0 && (
           <FlatList
-            data={posts}
-            keyExtractor={(item) => item.id}
-            renderItem={renderPost}
+            data={filteredOrganizations}
+            keyExtractor={item => item.id}
+            renderItem={renderOrganization}
+            ListEmptyComponent={<Text style={styles.emptyText}>No organizations found.</Text>}
             scrollEnabled={false}
-            ListEmptyComponent={(<Text style={styles.emptyText}>No posts available.</Text>)}
           />
-        </View>
+        )}
+
+        {!searchActive && (
+          <>
+            <View style={{ marginVertical: 16 }}>
+              <Text style={styles.sectionTitle}>Popular Events</Text>
+              <FlatList
+                data={popularEvents}
+                horizontal
+                keyExtractor={item => item.id}
+                renderItem={renderEvent}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 8 }}
+              />
+            </View>
+
+            <View style={{ marginVertical: 8 }}>
+              <Text style={styles.sectionTitle}>Posts</Text>
+              <FlatList
+                data={posts}
+                keyExtractor={item => item.id}
+                renderItem={renderPost}
+                scrollEnabled={false}
+                ListEmptyComponent={<Text style={styles.emptyText}>No posts available</Text>}
+              />
+            </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );
 }
 
-const styleCardWidth = (Dimensions.get("window").width - 48) / 2; // 48 accounts for padding and gaps
-
 const styles = StyleSheet.create({
-  outerContainer: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
   topBar: {
-    paddingTop: 50,
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
     paddingHorizontal: 20,
     paddingBottom: 12,
     backgroundColor: "#fff",
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    borderBottomColor: "#E0E0E0",
     borderBottomWidth: 1,
+    borderBottomColor: "#eee",
   },
   appName: {
     fontSize: 28,
     fontWeight: "bold",
     color: "#2B2B2B",
+    flex: 1,
   },
-  topBarButtons: {
+  organizationCard: {
     flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    marginVertical: 6,
+    marginHorizontal: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  organizationContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  organizationAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: 16,
+  },
+  organizationAvatarLetter: {
+    fontSize: 29,
+    fontWeight: "700",
+    color: "#fff",
+    textAlign: "center",
+    lineHeight: 56,
+  },
+  organizationInfo: {
+    flexShrink: 1,
+  },
+  organizationName: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#222",
+  },
+  organizationCategory: {
+    fontSize: 13,
+    color: "#666",
+    marginVertical: 2,
+  },
+  organizationStats: {
+    fontSize: 14,
+    color: "#888",
+  },
+  eventCard: {
+  width: CARD_WIDTH + 10,
+  backgroundColor: "#fff",
+  borderColor: "#ededed",
+  borderWidth: 1.2,
+  borderRadius: 10,      // Smooth corners but not circles
+  marginBottom: 0,
+  minHeight: 220,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.10,
+  shadowRadius: 4,
+  elevation: 4,
+  overflow: "hidden",
+},
+eventImage: {
+  width: "100%",
+  height: 120,
+  borderTopLeftRadius: 10,
+  borderTopRightRadius: 10,
+  backgroundColor: "#f3f3f3",
+},
+cardDivider: {
+  height: 1,
+  backgroundColor: "#ededed",
+  marginHorizontal: 0,
+},
+eventContent: {
+  padding: 13,
+},
+eventTitle: {
+  fontSize: 18,
+  fontWeight: "bold",
+  color: "#222",
+  marginBottom: 4,
+},
+eventOrg: {
+  fontSize: 14,
+  color: "#384c72ff",
+  marginBottom: 2,
+},
+eventLocation: {
+  fontSize: 13,
+  color: "#444",
+  marginBottom: 2,
+},
+eventMeta: {
+  fontSize: 12,
+  color: "#666",
+  marginBottom: 2,
+},
+eventDate: {
+  fontSize: 13,
+  fontWeight: "600",
+  color: "#3867d6",
+  marginTop: 6,
+},
+
+  followButton: {
+    backgroundColor: "#157efb",
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginLeft: 12,
+  },
+  followButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+
+  topActions: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 14,
   },
   iconButton: {
-    marginLeft: 10,
-    position: "relative",
+    padding: 6,
   },
+  searchBarWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f4f6fb",
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,               
+    borderColor: "#ccc",
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    height: 44,
+    marginLeft: 8,
+    color: "#333",
+    paddingVertical: 0,
+  },
+  cancelButton: {
+    marginLeft: 10,
+  },
+  cancelText: {
+    fontSize: 16,
+    color: "#2B2B2B",
+  },
+
+
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  topBar: {
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#2B2B2B",
+    flex: 1,
+  },
+  topActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  iconButton: {
+    padding: 6,
+  },
+
   sectionTitle: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#2B2B2B",
-    marginLeft: 16,
-    marginBottom: 12,
+    marginLeft: 8,
+    marginBottom: 5,
+    color: "#222",
   },
   horizontalCard: {
+    width: CARD_WIDTH,
     backgroundColor: "#fff",
-    width: styleCardWidth,
-    marginVertical: 8,
-    marginHorizontal: CARD_GAP / 2,
-    borderRadius: 18,
-    padding: 23,
-    alignItems: "center",
-    justifyContent: "space-between",
-    elevation: 5,
+    borderRadius: 16,
+    padding: 10,
+    marginHorizontal: 4,
+    justifyContent: "center",
+    elevation: 3,
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 6,
@@ -338,85 +632,89 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
+    marginRight: 12,
     backgroundColor: "#eee",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
   },
   avatarLetter: {
-    fontWeight: "700",
-    color: "#fff",
     fontSize: 28,
+    fontWeight: "bold",
+    color: "#fff",
   },
   eventTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
+    fontWeight: "bold",
     color: "#222",
-    marginBottom: 4,
   },
-  organizationName: {
+  eventInfo: {
     fontSize: 14,
     color: "#555",
-    textAlign: "center",
+    marginTop: 2,
   },
   eventDate: {
     fontSize: 12,
     color: "#888",
+    marginTop: 4,
+  },
+  participantInfo: {
+    fontSize: 14,
+    color: "#555",
     marginTop: 2,
-    textAlign: "center",
-  },
-  registerButton: {
-    backgroundColor: "#2B2B2B",
-    borderRadius: 18,
-    paddingVertical: 8,
-    paddingHorizontal: 22,
-    marginTop: 12,
-  },
-  registerButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-    textAlign: "center",
   },
   postCard: {
+    marginHorizontal: 12,
+    marginVertical: 8,
     backgroundColor: "#fff",
     borderRadius: 16,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 20,
+    padding: 12,
     elevation: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
   },
   postHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  postOrgName: {
+  postAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#476397",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  postAvatarLetter: {
     fontSize: 18,
-    fontWeight: "700",
-    color: "#222",
-    marginLeft: 10,
-    marginTop: 0
+    fontWeight: "bold",
+    color: "#fff",
   },
-  postCaption: {
+  postOrganization: {
+    marginLeft: 12,
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#222",
+  },
+  postText: {
+    marginTop: 6,
     fontSize: 16,
     color: "#444",
-    marginBottom: 12,
   },
   postImage: {
+    marginTop: 10,
     width: "100%",
     height: 220,
-    borderRadius: 16,
+    borderRadius: 12,
   },
   postActions: {
+    marginTop: 10,
     flexDirection: "row",
     justifyContent: "space-around",
-    paddingTop: 10,
+  },
+  emptyText: {
+    marginTop: 40,
+    fontSize: 16,
+    color: "#999",
+    textAlign: "center",
   },
   loadingContainer: {
     flex: 1,
@@ -424,15 +722,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loadingText: {
-    marginTop: 14,
     fontSize: 16,
-    fontWeight: "600",
-    color: "#555",
-  },
-  emptyText: {
-    fontSize: 16,
-    textAlign: "center",
-    marginTop: 60,
-    color: "#888",
+    marginTop: 10,
+    color: "#666",
   },
 });

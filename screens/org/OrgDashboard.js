@@ -1,528 +1,742 @@
-import { Ionicons } from '@expo/vector-icons';
-import { collection, doc, getDoc, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
+  View,
+  Text,
   FlatList,
   Image,
-  Platform,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
   RefreshControl,
   StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { useAppContext } from '../../contexts/AppContext';
-import { db } from '../../firebaseConfig';
+  Platform,
+  Dimensions,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import * as Animatable from "react-native-animatable";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  where,
+  orderBy,
+  limit,
+} from "firebase/firestore";
+import { db } from "../../firebaseConfig";
 
-export default function OrganizationDashboard({ navigation }) {
-  const { user } = useAppContext();
-  const [organization, setOrganization] = useState(null);
-  const [feedItems, setFeedItems] = useState([]);
+const screenWidth = Dimensions.get("window").width;
+const CARD_GAP = 9;
+const CARD_WIDTH = (screenWidth - 3 * CARD_GAP) / 2;
+
+export default function Feed({ navigation }) {
+  const [popularEvents, setPopularEvents] = useState([]);
+  const [posts, setPosts] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+  const [filteredOrganizations, setFilteredOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load organization data
-  useEffect(() => {
-    if (!user?.uid) return;
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
-    const fetchOrganizationData = async () => {
-      try {
-        const orgDoc = await getDoc(doc(db, 'organizations', user.uid));
-        if (orgDoc.exists()) {
-          setOrganization(orgDoc.data());
-        }
-      } catch (error) {
-        console.error('Error fetching organization:', error);
-      }
+  const getColor = (letter) => {
+    const colors = {
+      T: "#4e8cff",
+      B: "#50c878",
+      R: "#f44336",
+      U: "#ffd93d",
+      default: "#bdbdbd",
     };
+    return colors[letter] || colors.default;
+  };
 
-    fetchOrganizationData();
-  }, [user?.uid]);
+  const renderAvatar = (uri, name, size = 56) => {
+    if (uri) {
+      return (
+        <Image
+          source={{ uri }}
+          style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+        />
+      );
+    }
+    const letter = (name?.charAt(0) || "?").toUpperCase();
+    return (
+      <View
+        style={[
+          styles.avatar,
+          {
+            backgroundColor: getColor(letter),
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            justifyContent: "center",
+            alignItems: "center",
+          },
+        ]}
+      >
+        <Text style={[styles.avatarLetter, { fontSize: size / 2 }]}>{letter}</Text>
+      </View>
+    );
+  };
 
-  // Setup real-time listener for REPORTS ONLY
   useEffect(() => {
-    if (!user?.uid) return;
+    const today = new Date();
 
-    // Listen to reports mentioning this organization
-    console.log('Setting up reports listener for organization:', user.uid);
-    const unsubscribeReports = onSnapshot(
+    // Organizations fetch
+    const unsubOrgs = onSnapshot(
+      collection(db, "organizations"),
+      (snapshot) => {
+        const orgs = snapshot.docs
+          .map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              followerCount: data.followers?.length ?? 0,
+              eventCount: data.upcomingEvents ?? 0,
+            };
+          })
+          .sort(
+            (a, b) => b.followerCount - a.followerCount || b.eventCount - a.eventCount
+          );
+        setOrganizations(orgs);
+        setFilteredOrganizations(orgs);
+      },
+      () => {}
+    );
+
+    // Events fetch
+    const unsubEvents = onSnapshot(
       query(
-        collection(db, 'reports'),
-        orderBy('createdAt', 'desc')
+        collection(db, "events"),
+        where("date", ">=", today),
+        orderBy("date"),
+        limit(10)
       ),
       (snapshot) => {
-        console.log('Reports snapshot received:', snapshot.docs.length, 'total documents');
-        
-        // Filter reports that mention this organization and add sourceType
-        const filteredReports = snapshot.docs
-          .map(doc => ({ 
-            id: doc.id, 
-            ...doc.data(),
-            sourceType: 'report', // Add this to maintain consistency with your existing design
-            sortTime: doc.data().createdAt?.seconds || 0
-          }))
-          .filter(report => {
-            // Check if this organization is mentioned in the report
-            const isMentioned = report.mentionedOrganizations?.some(org => {
-              if (typeof org === 'string') {
-                return org === user.uid;
-              } else if (typeof org === 'object' && org !== null) {
-                return org.id === user.uid;
-              }
-              return false;
-            });
-            
-            if (isMentioned) {
-              console.log('Report mentions this org:', report.id);
-            }
-            
-            return isMentioned;
+        const events = snapshot.docs
+          .map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              dateObj: data.date?.toDate ? data.date.toDate() : new Date(data.date),
+              participantCount: data.participants?.length ?? 0,
+            };
           });
-
-        console.log('Filtered reports for this org:', filteredReports.length);
-        setFeedItems(filteredReports); // Set only reports
-        setLoading(false);
+        setPopularEvents(events);
       },
-      (error) => {
-        console.error('Reports listener error:', error);
-        setLoading(false);
-      }
+      () => {}
+    );
+
+    // Posts fetch with org info enrichment
+    const unsubPosts = onSnapshot(
+      query(
+        collection(db, "posts"),
+        orderBy("createdAt", "desc"),
+        limit(40)
+      ),
+      async (snapshot) => {
+        const postsArr = [];
+        const orgIds = new Set();
+        snapshot.docs.forEach((doc) => {
+          const d = doc.data();
+          postsArr.push({ id: doc.id, ...d });
+          if (d.authorId) orgIds.add(d.authorId);
+        });
+        let orgDocs = [];
+        if (orgIds.size > 0) {
+          orgDocs = await Promise.all(
+            Array.from(orgIds).map((id) => getDoc(doc(db, "organizations", id)))
+          );
+        }
+        const orgMap = {};
+        orgDocs.forEach((d) => {
+          if (d.exists()) {
+            orgMap[d.id] = d.data();
+          }
+        });
+        setPosts(
+          postsArr.map((post) => ({
+            ...post,
+            organizationName: orgMap[post.authorId]?.name ?? "",
+            organizationAvatar: orgMap[post.authorId]?.logo ?? null,
+          }))
+        );
+      },
+      () => {}
     );
 
     return () => {
-      console.log('Cleaning up dashboard listeners');
-      unsubscribeReports();
+      unsubOrgs();
+      unsubEvents();
+      unsubPosts();
     };
-  }, [user?.uid]);
+  }, []);
 
-  const handleRefresh = async () => {
+  // Filter organizations with search term
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredOrganizations(organizations);
+    } else {
+      const q = searchQuery.toLowerCase();
+      const filtered = organizations.filter(
+        (org) =>
+          org.name?.toLowerCase().includes(q) ||
+          org.description?.toLowerCase().includes(q) ||
+          org.location?.toLowerCase().includes(q) ||
+          org.category?.toLowerCase().includes(q)
+      );
+      setFilteredOrganizations(filtered);
+    }
+  }, [searchQuery, organizations]);
+
+  const onRefresh = () => {
     setRefreshing(true);
-    // Real-time listener will automatically update the data
-    setTimeout(() => setRefreshing(false), 1000);
+    setLoading(true);
   };
 
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return 'Unknown';
-    
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    const now = new Date();
-    const diff = now - date;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-    return date.toLocaleDateString();
+  // Format date helper
+  const formatDate = (dateObj) => {
+    if (!dateObj) return "";
+    try {
+      if (dateObj instanceof Date) return dateObj.toLocaleDateString();
+      return new Date(dateObj).toLocaleDateString();
+    } catch {
+      return "";
+    }
   };
 
-  const renderFeedItem = ({ item }) => {
-    // Since we only have reports now, we can simplify this
-    const isReport = item.sourceType === 'report';
-
-    return (
-      <View style={styles.feedCard}>
-        {/* Report Header */}
-        <View style={styles.feedHeader}>
-          <View style={styles.authorInfo}>
-            <Image
-              source={{
-                uri: item.reporterAvatar || 'https://via.placeholder.com/44'
-              }}
-              style={styles.authorAvatar}
-            />
-            
-            <View style={styles.authorDetails}>
-              <Text style={styles.authorName}>
-                {item.reporterName || 'Anonymous User'}
-              </Text>
-              <Text style={styles.postTimestamp}>
-                {formatTimestamp(item.createdAt)}
-              </Text>
-            </View>
-          </View>
-          
-          {/* Type Badge - Always REPORT now */}
-          <View style={[styles.typeBadge, getTypeStyle(item.sourceType)]}>
-            <Ionicons name={getTypeIcon(item.sourceType)} size={12} color="#fff" />
-            <Text style={styles.badgeText}>REPORT</Text>
-          </View>
-        </View>
-
-        {/* Content */}
-        {item.text && (
-          <Text style={styles.feedText}>{item.text}</Text>
-        )}
-
-        {/* Image */}
-        {item.imageUrl && (
-          <Image source={{ uri: item.imageUrl }} style={styles.feedImage} />
-        )}
-
-        {/* Mentioned Organizations */}
-        {item.mentionedOrganizations && (
-          <View style={styles.mentionedOrgsContainer}>
-            <Text style={styles.mentionedOrgsLabel}>Mentioned Organizations:</Text>
-            <View style={styles.mentionedOrgs}>
-              {item.mentionedOrganizations.map((org, index) => (
-                <View key={index} style={styles.mentionedOrg}>
-                  <Image 
-                    source={{ uri: (typeof org === 'object' ? org.logo : null) || 'https://via.placeholder.com/20' }}
-                    style={styles.mentionedOrgLogo}
-                  />
-                  <Text style={styles.mentionedOrgName}>
-                    {typeof org === 'object' ? org.name : 'Organization'}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Engagement Footer */}
-        <View style={styles.engagementFooter}>
-          <TouchableOpacity style={styles.engagementButton}>
-            <Ionicons name="heart-outline" size={18} color="#666" />
-            <Text style={styles.engagementText}>{item.likes?.length || 0}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.engagementButton}>
-            <Ionicons name="chatbubble-outline" size={18} color="#666" />
-            <Text style={styles.engagementText}>{item.comments?.length || 0}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.engagementButton}>
-            <Ionicons name="eye-outline" size={18} color="#666" />
-            <Text style={styles.engagementText}>{item.views?.length || 0}</Text>
-          </TouchableOpacity>
-
-          {/* Respond button - Always shown for reports */}
-          <TouchableOpacity 
-            style={styles.respondButton}
-            onPress={() => navigation.navigate('RespondToReport', { report: item })}
-          >
-            <Ionicons name="mail-outline" size={16} color="#2B2B2B" />
-            <Text style={styles.respondText}>Respond</Text>
-          </TouchableOpacity>
-        </View>
+const renderEvent = ({ item, index }) => (
+  <Animatable.View
+    animation="fadeInLeft"
+    delay={index * 80}
+    style={[
+      styles.eventCard,
+      {
+        marginLeft: index === 0 ? CARD_GAP : CARD_GAP / 2,
+        marginRight: CARD_GAP / 2,
+      },
+    ]}
+  >
+    <TouchableOpacity
+      style={{ flex: 1 }}
+      onPress={() => navigation.navigate("EventDetails", { event: item })}
+      activeOpacity={0.9}
+    >
+      {/* Sharp rectangular event image */}
+      <Image
+        source={{ uri: item.coverImage || 'https://via.placeholder.com/400x180.png?text=Event' }}
+        style={styles.eventImage}
+      />
+      {/* Divider */}
+      <View style={styles.cardDivider} />
+      <View style={styles.eventContent}>
+        <Text style={styles.eventTitle} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <Text style={styles.eventOrg} numberOfLines={1}>
+          {item.organizationName}
+        </Text>
+        <Text style={styles.eventLocation} numberOfLines={1}>
+          {item.place || "Unknown location"}
+        </Text>
+        <Text style={styles.eventMeta}>
+          {item.participantCount} participant{item.participantCount === 1 ? "" : "s"}
+        </Text>
+        <Text style={styles.eventDate}>{formatDate(item.dateObj)}</Text>
       </View>
-    );
-  };
+    </TouchableOpacity>
+  </Animatable.View>
+);
 
-  const getTypeStyle = (sourceType) => {
-    return { backgroundColor: '#E74C3C' }; // Always red for reports
-  };
 
-  const getTypeIcon = (sourceType) => {
-    return 'flag'; // Always flag for reports
-  };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Ionicons name="flag-outline" size={80} color="#E0E0E0" />
-      <Text style={styles.emptyTitle}>No Reports Yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Community reports about your organization will appear here
-      </Text>
-    </View>
+const renderOrganization = ({ item }) => (
+  <Animatable.View animation="fadeInUp" style={styles.organizationCard}>
+    <TouchableOpacity
+      style={styles.organizationContent}
+      onPress={() => navigation.navigate("OrganizationDetails", { organization: item })}
+      activeOpacity={0.8}
+    >
+      {item.logo ? (
+        <Image source={{ uri: item.logo }} style={styles.organizationAvatar} />
+      ) : (
+        <View style={[styles.organizationAvatar, { backgroundColor: "#28b35dff" }]}>
+          <Text style={styles.organizationAvatarLetter}>
+            {(item.name?.charAt(0) ?? "?").toUpperCase()}
+          </Text>
+        </View>
+      )}
+      <View style={styles.organizationInfo}>
+        <Text style={styles.organizationName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={styles.organizationCategory} numberOfLines={1}>
+          {item.category || ""}
+        </Text>
+        <Text style={styles.organizationStats} numberOfLines={1}>
+          <Ionicons name="people-outline" size={14} color="#666" /> {item.followerCount} followers • {item.eventCount} events
+        </Text>
+      </View>
+    </TouchableOpacity>
+
+    <TouchableOpacity style={styles.followButton}>
+      <Text style={styles.followButtonText}>Follow</Text>
+    </TouchableOpacity>
+  </Animatable.View>
+);
+
+
+  const renderPost = ({ item }) => (
+    <Animatable.View animation="fadeInUp" style={styles.postCard}>
+      <View style={styles.postHeader}>
+        {item.organizationAvatar ? (
+          <Image source={{ uri: item.organizationAvatar }} style={styles.postAvatar} />
+        ) : (
+          <View style={[styles.postAvatar, { backgroundColor: "#476397" }]}>
+            <Text style={styles.postAvatarLetter}>{item.organizationName?.charAt(0).toUpperCase()}</Text>
+          </View>
+        )}
+        <Text style={styles.postOrganization}>{item.organizationName}</Text>
+      </View>
+      <Text style={styles.postText}>{item.caption || item.text}</Text>
+      {item.imageUrl && <Image source={{ uri: item.imageUrl }} style={styles.postImage} />}
+      <View style={styles.postActions}>
+        <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
+        <TouchableOpacity><Ionicons name="chatbubble-outline" size={24} color="#444" /></TouchableOpacity>
+        <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity>
+      </View>
+    </Animatable.View>
   );
-
-  if (loading && feedItems.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2B2B2B" />
-        <Text style={styles.loadingText}>Loading reports...</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
-      {/* Simple Header with Icons Only */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>YOUnite</Text>
-        
-        {/* Action Icon Buttons */}
-        <View style={styles.actionIcons}>
- 
-
+  <View style={styles.topBar}>
+  {!searchActive ? (
+    <>
+      <Text style={styles.appName}>YOUnite</Text>
+      <View style={styles.topActions}>
+        <TouchableOpacity onPress={() => setSearchActive(true)} style={styles.iconButton}>
+          <Ionicons name="search" size={28} color="#2B2B2B" />
+        </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: '#fff' }]}
-            onPress={() => navigation.navigate('PostDetails')}
-          >
-            
-            <Ionicons name="add" size={26} color="#2B2B2B" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: '#fff' }]}
-            onPress={() => navigation.navigate('CreateEvent')}
-          >
-            <Ionicons name="calendar-outline" size={26} color="#2B2B2B" />
-          </TouchableOpacity>
-                   <TouchableOpacity
-  style={styles.iconButton}
-  onPress={() => navigation.navigate('ReportsScreen')}
->
-  <Ionicons name="flag-outline" size={26} color="#2B2B2B" />
-</TouchableOpacity>
-        </View>
+                    style={[styles.iconButton, { backgroundColor: '#fff' }]}
+                    onPress={() => navigation.navigate('PostDetails')}
+                  >
+                    
+                    <Ionicons name="add" size={26} color="#2B2B2B" />
+                  </TouchableOpacity>
+                  
+        <TouchableOpacity onPress={() => navigation.navigate("CreateEvent")} style={styles.iconButton}>
+          <Ionicons name="calendar-outline" size={28} color="rgba(5,5,5,0.73)" />
+                </TouchableOpacity>
+                         <TouchableOpacity
+        style={styles.iconButton}
+        onPress={() => navigation.navigate('ReportsScreen')}
+      >
+        <Ionicons name="flag-outline" size={26} color="#2B2B2B" />
+      </TouchableOpacity>
       </View>
+    </>
+  ) : (
+    <View style={styles.searchBarWrapper}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={20} color="#888" />
+        <TextInput
+          style={styles.searchInput}
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          placeholder="Search organizations..."
+          autoFocus
+          returnKeyType="done"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <Ionicons name="close-circle" size={20} color="#bbb" />
+          </TouchableOpacity>
+        )}
+      </View>
+      <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchActive(false); }} style={styles.cancelButton}>
+        <Text style={styles.cancelText}>Cancel</Text>
+      </TouchableOpacity>
+    </View>
+  )}
+</View>
 
-      {/* Feed Content - Now only reports */}
-      <FlatList
-        data={feedItems}
-        keyExtractor={(item) => `${item.sourceType}-${item.id}`}
-        renderItem={renderFeedItem}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-        contentContainerStyle={styles.feedContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={renderEmptyState}
-      />
+
+
+
+      <ScrollView keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
+        setRefreshing(true);
+        setLoading(true);
+      }} />}>
+
+        {searchActive && searchQuery.trim().length > 0 && (
+          <FlatList
+            data={filteredOrganizations}
+            keyExtractor={item => item.id}
+            renderItem={renderOrganization}
+            ListEmptyComponent={<Text style={styles.emptyText}>No organizations found.</Text>}
+            scrollEnabled={false}
+          />
+        )}
+
+        {!searchActive && (
+          <>
+            <View style={{ marginVertical: 16 }}>
+              <Text style={styles.sectionTitle}>Popular Events</Text>
+              <FlatList
+                data={popularEvents}
+                horizontal
+                keyExtractor={item => item.id}
+                renderItem={renderEvent}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 8 }}
+              />
+            </View>
+
+            <View style={{ marginVertical: 16 }}>
+              <Text style={styles.sectionTitle}>Posts</Text>
+              <FlatList
+                data={posts}
+                keyExtractor={item => item.id}
+                renderItem={renderPost}
+                scrollEnabled={false}
+                ListEmptyComponent={<Text style={styles.emptyText}>No posts available</Text>}
+              />
+            </View>
+          </>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  topBar: {
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#2B2B2B",
+    flex: 1,
+  },
+  organizationCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    marginVertical: 6,
+    marginHorizontal: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  organizationContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  organizationAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginRight: 16,
+  },
+  eventCard: {
+  width: CARD_WIDTH + 10,
+  backgroundColor: "#fff",
+  borderColor: "#e6e6e6",
+  borderRadius: 10,      // Smooth corners but not circles
+  borderWidth: 1.5,
+  marginBottom: 0,
+  minHeight: 220,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.07,
+  shadowRadius: 0.5,
+  elevation: 2,
+  overflow: "hidden", // Ensure contents don't spill over
+},
+eventImage: {
+  width: "100%",
+  height: 120,
+  borderTopLeftRadius: 10,
+  borderTopRightRadius: 10,
+    backgroundColor: "#ddd",
+},
+cardDivider: {
+  height: 1,
+  backgroundColor: "#e6e6e6",
+  marginHorizontal: 0,
+},
+eventContent: {
+  padding: 12,
+},
+eventTitle: {
+  fontSize: 17,
+  fontWeight: "bold",
+  color: "#222",
+  marginBottom: 4,
+},
+eventOrg: {
+  fontSize: 14,
+  color: "#384c72ff",
+  marginBottom: 2,
+},
+eventLocation: {
+  fontSize: 13,
+  color: "#444",
+  marginBottom: 2,
+},
+eventMeta: {
+  fontSize: 12,
+  color: "#666",
+  marginBottom: 2,
+},
+eventDate: {
+  fontSize: 13,
+  fontWeight: "600",
+  color: "#3867d6",
+  marginTop: 5,
+},
+
+  organizationAvatarLetter: {
+    fontSize: 29,
+    fontWeight: "700",
+    color: "#fff",
+    textAlign: "center",
+    lineHeight: 56,
+  },
+  organizationInfo: {
+    flexShrink: 1,
+  },
+  organizationName: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#222",
+  },
+  organizationCategory: {
+    fontSize: 13,
+    color: "#666",
+    marginVertical: 2,
+  },
+  organizationStats: {
+    fontSize: 14,
+    color: "#888",
+  },
+  followButton: {
+    backgroundColor: "#157efb",
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginLeft: 12,
+  },
+  followButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+
+  topActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  iconButton: {
+    padding: 6,
+  },
+  searchBarWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f4f6fb",
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,               
+    borderColor: "#ccc",
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    height: 44,
+    marginLeft: 8,
+    color: "#333",
+    paddingVertical: 0,
+  },
+  cancelButton: {
+    marginLeft: 10,
+  },
+  cancelText: {
+    fontSize: 16,
+    color: "#2B2B2B",
+  },
+
+
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FB',
+    backgroundColor: "#fff",
   },
-
-  // Loading State
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FB',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-
-  // Simple Header
-  header: {
-    backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingHorizontal: 24,
-    paddingBottom: 20,
+  topBar: {
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
+    borderBottomColor: "#eee",
   },
-  headerTitle: {
+  appName: {
     fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: "bold",
+    color: "#2B2B2B",
+    flex: 1,
   },
-
-  // Action Icon Buttons
-  actionIcons: {
-    flexDirection: 'row',
+  topActions: {
+    flexDirection: "row",
     gap: 12,
   },
   iconButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 6,
+  },
+
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginLeft: 8,
+    marginBottom: 10,
+    color: "#222",
+  },
+  horizontalCard: {
+    width: CARD_WIDTH,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 10,
+    marginHorizontal: 4,
+    justifyContent: "center",
     elevation: 3,
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: "#000",
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-
-  // Feed Content
-  feedContent: {
-    paddingVertical: 16,
-  },
-
-  // Feed Card
-  feedCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderRadius: 16,
-    padding: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
     shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
-
-  // Feed Header
-  feedHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  authorInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  authorAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#F3F4F6',
+    backgroundColor: "#eee",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  authorDetails: {
-    flex: 1,
+  avatarLetter: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#fff",
   },
-  authorName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
+  eventTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#222",
   },
-  postTimestamp: {
+  eventInfo: {
     fontSize: 14,
-    color: '#6B7280',
+    color: "#555",
+    marginTop: 2,
   },
-
-  // Type Badge
-  typeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginLeft: 4,
-    letterSpacing: 0.5,
-  },
-
-  // Feed Content
-  feedText: {
-    fontSize: 16,
-    color: '#374151',
-    lineHeight: 24,
-    marginBottom: 16,
-  },
-  feedImage: {
-    width: '100%',
-    height: 240,
-    borderRadius: 12,
-    marginBottom: 16,
-    backgroundColor: '#F3F4F6',
-  },
-
-  // Mentioned Organizations (Reports only)
-  mentionedOrgsContainer: {
-    backgroundColor: '#F3F4F6',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  mentionedOrgsLabel: {
+  eventDate: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 8,
+    color: "#888",
+    marginTop: 4,
   },
-  mentionedOrgs: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  participantInfo: {
+    fontSize: 14,
+    color: "#555",
+    marginTop: 2,
   },
-  mentionedOrg: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  postCard: {
+    marginHorizontal: 12,
+    marginVertical: 8,
+    backgroundColor: "#fff",
     borderRadius: 16,
+    padding: 12,
+    elevation: 3,
   },
-  mentionedOrgLogo: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 4,
+  postHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
   },
-  mentionedOrgName: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
+  postAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#476397",
+    justifyContent: "center",
+    alignItems: "center",
   },
-
-  // Engagement Footer
-  engagementFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+  postAvatarLetter: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#fff",
   },
-  engagementButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 24,
-  },
-  engagementText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-    marginLeft: 6,
-  },
-  respondButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EBF4FF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginLeft: 'auto',
-  },
-  respondText: {
-    fontSize: 14,
-    color: '#4e8cff',
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#374151',
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
+  postOrganization: {
+    marginLeft: 12,
     fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
+    fontWeight: "bold",
+    color: "#222",
+  },
+  postText: {
+    marginTop: 6,
+    fontSize: 16,
+    color: "#444",
+  },
+  postImage: {
+    marginTop: 10,
+    width: "100%",
+    height: 220,
+    borderRadius: 12,
+  },
+  postActions: {
+    marginTop: 10,
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  emptyText: {
+    marginTop: 40,
+    fontSize: 16,
+    color: "#999",
+    textAlign: "center",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 16,
+    marginTop: 10,
+    color: "#666",
   },
 });

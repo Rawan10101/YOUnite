@@ -140,7 +140,7 @@ function VolunteerTabs() {
     >
       {<Tab.Screen name="Feed" component={FeedStackScreen} /> }
 
-      <Tab.Screen name="Discover" component={DiscoverStackScreen} />
+      {/* <Tab.Screen name="Discover" component={DiscoverStackScreen} /> */}
       
       <Tab.Screen 
         name="ChatList" 
@@ -264,28 +264,28 @@ function ApplicationsStackScreen() {
 //   );
 // }
 
-function DiscoverStackScreen() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="DiscoverMain" component={DiscoverScreen} />
-      <Stack.Screen
-        name="EventDetails"
-        component={EventDetailsScreen}
-        options={{ headerShown: true, title: 'Event Details' }}
-      />
-      <Stack.Screen
-        name="OrganizationDetails"
-        component={OrganizationDetailsScreen}
-        options={{ headerShown: true, title: 'Organization' }}
-      />
-      <Stack.Screen 
-        name="Chat" 
-        component={ChatScreen} 
-        options={{ headerShown: false }}
-      />
-    </Stack.Navigator>
-  );
-}
+// function DiscoverStackScreen() {
+//   return (
+//     <Stack.Navigator screenOptions={{ headerShown: false }}>
+//       <Stack.Screen name="DiscoverMain" component={DiscoverScreen} />
+//       <Stack.Screen
+//         name="EventDetails"
+//         component={EventDetailsScreen}
+//         options={{ headerShown: true, title: 'Event Details' }}
+//       />
+//       <Stack.Screen
+//         name="OrganizationDetails"
+//         component={OrganizationDetailsScreen}
+//         options={{ headerShown: true, title: 'Organization' }}
+//       />
+//       <Stack.Screen 
+//         name="Chat" 
+//         component={ChatScreen} 
+//         options={{ headerShown: false }}
+//       />
+//     </Stack.Navigator>
+//   );
+// }
 
 function EventsStackScreen() {
   return (

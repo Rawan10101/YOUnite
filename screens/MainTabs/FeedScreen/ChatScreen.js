@@ -739,13 +739,13 @@ const styles = StyleSheet.create({
   headerInfo: {
     flex: 1,
   },
-  
+
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#2B2B2B',
+    color: '#d13939ff',
   },
-  
+
   headerSubtitle: {
     fontSize: 14,
     color: '#666',
@@ -815,7 +815,7 @@ const styles = StyleSheet.create({
   },
   
   messageBubbleRight: {
-    backgroundColor: '#2B2B2B',
+    backgroundColor: '#b62b2bff',
     borderBottomRightRadius: 4,
   },
   
