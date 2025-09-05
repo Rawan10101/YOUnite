@@ -1,29 +1,29 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  Image,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  RefreshControl,
-  StyleSheet,
-  Platform,
-  Dimensions,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as Animatable from "react-native-animatable";
 import {
   collection,
   doc,
   getDoc,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   where,
-  orderBy,
-  limit,
 } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import {
+  Dimensions,
+  FlatList,
+  Image,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import * as Animatable from "react-native-animatable";
 import { db } from "../../../firebaseConfig";
 
 const screenWidth = Dimensions.get("window").width;
@@ -352,9 +352,6 @@ const renderOrganization = ({ item }) => (
     </View>
   )}
 </View>
-
-
-
 
       <ScrollView keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
         setRefreshing(true);

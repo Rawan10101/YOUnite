@@ -1,4 +1,3 @@
-// Imports
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import {
@@ -14,9 +13,10 @@ import {
 } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import { getAuth, updateProfile } from 'firebase/auth';
-import { getStorage, ref, getDownloadURL, uploadBytes } from 'firebase/storage';
+import { getStorage, ref, getDownloadURL, uploadString } from 'firebase/storage';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -29,7 +29,8 @@ import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';
 import { db } from '../../../firebaseConfig';
 
-// Profile avatar component
+// ProfileAvatar component
+// ProfileAvatar component with cache busting on photoURL
 const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
   const getInitials = (name) => {
     if (!name) return "V";
@@ -49,6 +50,10 @@ const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
     const index = name.length % colors.length;
     return colors[index];
   };
+
+  // Append a timestamp to bust any image caching by React Native <Image>
+  const photoUri = photoURL ? `${photoURL}?t=${Date.now()}` : null;
+
   return (
     <View style={{ width: size, height: size }}>
       {!photoURL ? (
@@ -56,7 +61,8 @@ const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
           style={[
             styles.defaultAvatar,
             {
-              width: size, height: size,
+              width: size,
+              height: size,
               borderRadius: size / 2,
               backgroundColor: getAvatarColor(displayName),
             },
@@ -68,8 +74,9 @@ const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
         </View>
       ) : (
         <Image
-          source={{ uri: photoURL }}
+          source={{ uri: photoUri }}
           style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+          resizeMode="cover"
         />
       )}
       <TouchableOpacity
@@ -82,7 +89,8 @@ const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
   );
 };
 
-// Main ProfileScreen
+
+
 export default function ProfileScreen({ navigation }) {
   const { user, setUser, followedOrganizations } = useAppContext();
   const [userStats, setUserStats] = useState({
@@ -93,6 +101,7 @@ export default function ProfileScreen({ navigation }) {
   });
   const [recentActivities, setRecentActivities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (user?.uid) {
@@ -170,57 +179,88 @@ export default function ProfileScreen({ navigation }) {
       ]
     );
   };
+
+const CLOUD_FUNCTION_URL = 'https://us-central1-younite-7eb12.cloudfunctions.net/uploadProfileImage';
+
 const handleAddProfileImage = async () => {
-  // 1. Request permission
-  const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permissionResult.granted) {
-    Alert.alert(
-      "Permission Denied",
-      "Permission to access media library is required!"
-    );
-    return;
-  }
-
-  // 2. Pick image
-  const pickerResult = await ImagePicker.launchImageLibraryAsync({
-    allowsEditing: true,
-    aspect: [1, 1],
-    quality: 0.7,
-  });
-
-  if (pickerResult.canceled) return;
-
-  const imageUri = pickerResult.assets?.[0]?.uri;
-  if (!imageUri) return;
-
   try {
+    console.log("Requesting media library permissions...");
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Permission Denied", "Permission to access media library is required!");
+      console.log("Permission denied.");
+      return;
+    }
+    console.log("Permission granted.");
+
+    console.log("Launching image picker...");
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (pickerResult.canceled) {
+      console.log("Image picker canceled.");
+      return;
+    }
+    console.log("Image picked.");
+
+    const imageUri = pickerResult.assets?.[0]?.uri;
+    if (!imageUri) {
+      console.log("No image URI found.");
+      return;
+    }
+    console.log("Image URI:", imageUri);
+
+    console.log("Reading image as base64...");
+    const base64String = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
+    console.log("Base64 length:", base64String.length);
+
     const auth = getAuth();
-    const storage = getStorage();
     const user = auth.currentUser;
+    if (!user) {
+      Alert.alert("Error", "User not authenticated.");
+      console.log("User not authenticated.");
+      return;
+    }
+    console.log("Authenticated user:", user.uid);
 
-    // 3. Convert file URI → Blob
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
+    console.log("Uploading base64 string to Firebase Cloud Function...");
+    const response = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64: base64String, userId: user.uid }),
+    });
 
-    // 4. Upload to Firebase Storage
-    const storageRef = ref(storage, `profileImages/${user.uid}.jpg`);
-    await uploadBytes(storageRef, blob);
+    if (!response.ok) {
+      throw new Error('Cloud Function upload failed');
+    }
 
-    // 5. Get download URL
-    const downloadURL = await getDownloadURL(storageRef);
+    const { downloadURL } = await response.json();
+    console.log("Download URL from Cloud Function:", downloadURL);
 
-    // 6. Update Firebase Auth profile + Firestore
     await updateProfile(user, { photoURL: downloadURL });
-    await updateDoc(doc(db, "users", user.uid), { photoURL: downloadURL });
+    console.log("User profile updated with photoURL.");
 
-    setUser((prev) => ({ ...prev, photoURL: downloadURL }));
+    await updateDoc(doc(db, 'users', user.uid), { photoURL: downloadURL });
+    console.log("Firestore user document updated with photoURL.");
+
+    // Update local user state to trigger UI refresh (important)
+    setUser((prevUser) => ({
+      ...prevUser,
+      photoURL: downloadURL,
+    }));
 
     Alert.alert("Success", "Profile image updated successfully!");
   } catch (error) {
-    console.error("Error uploading profile image:", error);
-    Alert.alert("Error", "Failed to upload profile image.");
+    console.error("Upload error:", error);
+    Alert.alert("Error", `Failed to upload profile image. ${error.message || error}`);
   }
 };
+
+
+
 
   const renderStatCard = (title, value, icon, color) => (
     <Animatable.View
@@ -277,70 +317,79 @@ const handleAddProfileImage = async () => {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
-        <View style={styles.profileInfo}>
-          <ProfileAvatar
-            photoURL={user?.photoURL}
-            displayName={user?.displayName || user?.email?.split('@')[0]}
-            size={80}
-            onPressAdd={handleAddProfileImage}
-          />
-          <Text style={styles.userName}>
-            {user?.displayName || user?.email?.split('@')[0] || 'Volunteer'}
-          </Text>
-        </View>
-      </Animatable.View>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        <Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
+          <View style={styles.profileInfo}>
+            <ProfileAvatar
+              photoURL={user?.photoURL}
+              displayName={user?.displayName || user?.email?.split('@')[0]}
+              size={80}
+              onPressAdd={handleAddProfileImage}
+            />
+            <Text style={styles.userName}>
+              {user?.displayName || user?.email?.split('@')[0] || 'Volunteer'}
+            </Text>
+          </View>
+        </Animatable.View>
 
-      <View style={styles.statsSection}>
-        <Text style={styles.sectionTitle}>Your Impact</Text>
-        <View style={styles.statsGrid}>
-          {renderStatCard('Hours Volunteered', userStats.totalHours, 'time-outline', '#4CAF50')}
-          {renderStatCard('Events Attended', userStats.eventsAttended, 'calendar-outline', '#2196F3')}
-          {renderStatCard('Organizations', userStats.organizationsFollowed, 'heart-outline', '#FF4757')}
-          {renderStatCard('Registered Events', userStats.eventsRegistered, 'arrow-up-circle-outline', '#FF9800')}
+        <View style={styles.statsSection}>
+          <Text style={styles.sectionTitle}>Your Impact</Text>
+          <View style={styles.statsGrid}>
+            {renderStatCard('Hours Volunteered', userStats.totalHours, 'time-outline', '#4CAF50')}
+            {renderStatCard('Events Attended', userStats.eventsAttended, 'calendar-outline', '#2196F3')}
+            {renderStatCard('Organizations', userStats.organizationsFollowed, 'heart-outline', '#FF4757')}
+            {renderStatCard('Registered Events', userStats.eventsRegistered, 'arrow-up-circle-outline', '#FF9800')}
+          </View>
         </View>
-      </View>
 
-      {recentActivities.length > 0 && (
-        <View style={styles.activitySection}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          {recentActivities.map((activity, index) => (
-            <View key={activity.id}>
-              {renderActivity({ item: activity, index })}
-            </View>
+        {recentActivities.length > 0 && (
+          <View style={styles.activitySection}>
+            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            {recentActivities.map((activity, index) => (
+              <View key={activity.id}>
+                {renderActivity({ item: activity, index })}
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.menuSection}>
+          {menuItems.map((item, index) => (
+            <Animatable.View
+              key={item.id}
+              animation="fadeInUp"
+              duration={600}
+              delay={index * 50}
+            >
+              <TouchableOpacity style={styles.menuItem} onPress={item.onPress}>
+                <View style={styles.menuLeft}>
+                  <Ionicons name={item.icon} size={20} color="#666" />
+                  <Text style={styles.menuText}>{item.title}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#ccc" />
+              </TouchableOpacity>
+            </Animatable.View>
           ))}
         </View>
+
+        <Animatable.View animation="fadeInUp" duration={800} style={styles.logoutSection}>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={20} color="#FF4757" />
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </Animatable.View>
+
+        <View style={styles.bottomPadding} />
+      </ScrollView>
+
+      {uploading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#4e8cff" />
+          <Text style={{ marginTop: 10, color: '#4e8cff' }}>Uploading...</Text>
+        </View>
       )}
-
-      <View style={styles.menuSection}>
-        {menuItems.map((item, index) => (
-          <Animatable.View
-            key={item.id}
-            animation="fadeInUp"
-            duration={600}
-            delay={index * 50}
-          >
-            <TouchableOpacity style={styles.menuItem} onPress={item.onPress}>
-              <View style={styles.menuLeft}>
-                <Ionicons name={item.icon} size={20} color="#666" />
-                <Text style={styles.menuText}>{item.title}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#ccc" />
-            </TouchableOpacity>
-          </Animatable.View>
-        ))}
-      </View>
-
-      <Animatable.View animation="fadeInUp" duration={800} style={styles.logoutSection}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={20} color="#FF4757" />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </Animatable.View>
-
-      <View style={styles.bottomPadding} />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -522,5 +571,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: '#fff',
     borderRadius: 50,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
   },
 });
