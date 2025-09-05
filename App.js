@@ -22,14 +22,15 @@ import ChatScreen from './screens/MainTabs/FeedScreen/ChatScreen';
 import CommentsScreen from './screens/MainTabs/FeedScreen/CommentsScreen';
 import CreateReportScreen from './screens/MainTabs/FeedScreen/CreateReportScreen';
 import FeedScreen from './screens/MainTabs/FeedScreen/FeedScreen';
-import OrganizationDetailsScreen from './screens/org/OrganizationDetailsScreen';
 import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScreen';
 import ProfileDetailsScreen from './screens/MainTabs/ProfileScreen/ProfileDetailsScreen';
 import ProfileScreen from './screens/MainTabs/ProfileScreen/ProfileScreen';
 import SettingsScreen from './screens/MainTabs/ProfileScreen/SettingsScreen';
+import OrganizationDetailsScreen from './screens/org/OrganizationDetailsScreen';
 import ReportsScreen from './screens/org/ReportsScreen';
 import VolunteerApplicationsScreen from './screens/org/VolunteerApplicationsScreen';
 
+import EditEventScreen from './screens/MainTabs/EventsScreen/EditEventScreen';
 import CreateEventScreen from './screens/org/CreateEventScreen';
 import CreatePostScreen from './screens/org/CreatePostScreen';
 import OrganizationDashboard from './screens/org/OrgDashboard';
@@ -80,24 +81,22 @@ function ChatStackNavigator() {
     </Stack.Navigator>
   );
 }
+
 // VOLUNTEER STACK SCREENS (existing)
 function FeedStackScreen() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="FeedMain" component={FeedScreen} />
-      {/* <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} /> */}
-<Stack.Screen 
-  name="CreateReport" 
-  component={CreateReportScreen}
-  options={{ headerShown: false }}/>
-
-      {/* ADD THIS LINE */}
+      <Stack.Screen 
+        name="CreateReport" 
+        component={CreateReportScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen 
         name="Comments" 
         component={CommentsScreen} 
         options={{ headerShown: false }} 
       />
-      
       <Stack.Screen name="EventDetails" component={EventDetailsScreen} options={{ headerShown: true, title: 'Event Details' }} />
       <Stack.Screen name="OrganizationDetails" component={OrganizationDetailsScreen} options={{ headerShown: true, title: 'Organization' }} />
     </Stack.Navigator>
@@ -138,9 +137,7 @@ function VolunteerTabs() {
         headerShown: false,
       })}
     >
-      {<Tab.Screen name="Feed" component={FeedStackScreen} /> }
-
-      {/* <Tab.Screen name="Discover" component={DiscoverStackScreen} /> */}
+      <Tab.Screen name="Feed" component={FeedStackScreen} />
       
       <Tab.Screen 
         name="ChatList" 
@@ -154,18 +151,6 @@ function VolunteerTabs() {
       />
 
       <Tab.Screen name="Events" component={EventsStackScreen} />
-      
-      {/* NEW: Applications Tab for Volunteers
-      <Tab.Screen 
-        name="Applications" 
-        component={ApplicationsStackScreen}
-        options={{
-          title: 'Applications',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="document-text-outline" size={size} color={color} />
-          ),
-        }}
-      /> */}
       
       <Tab.Screen name="Profile" component={ProfileStackScreen} />
     </Tab.Navigator>
@@ -241,51 +226,6 @@ function ApplicationsStackScreen() {
     </Stack.Navigator>
   );
 }
-
-// // VOLUNTEER STACK SCREENS
-// function FeedStackScreen() {
-//   return (
-//     <Stack.Navigator screenOptions={{ headerShown: false }}>
-//       <Stack.Screen name="FeedMain" component={FeedScreen} />
-//       <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
-//       <Stack.Screen 
-//         name="CreateReport" 
-//         component={CreateReportScreen}
-//         options={{ headerShown: false }}
-//       />
-//       <Stack.Screen 
-//         name="Comments" 
-//         component={CommentsScreen} 
-//         options={{ headerShown: false }} 
-//       />
-//       <Stack.Screen name="EventDetails" component={EventDetailsScreen} options={{ headerShown: true, title: 'Event Details' }} />
-//       <Stack.Screen name="OrganizationDetails" component={OrganizationDetailsScreen} options={{ headerShown: true, title: 'Organization' }} />
-//     </Stack.Navigator>
-//   );
-// }
-
-// function DiscoverStackScreen() {
-//   return (
-//     <Stack.Navigator screenOptions={{ headerShown: false }}>
-//       <Stack.Screen name="DiscoverMain" component={DiscoverScreen} />
-//       <Stack.Screen
-//         name="EventDetails"
-//         component={EventDetailsScreen}
-//         options={{ headerShown: true, title: 'Event Details' }}
-//       />
-//       <Stack.Screen
-//         name="OrganizationDetails"
-//         component={OrganizationDetailsScreen}
-//         options={{ headerShown: true, title: 'Organization' }}
-//       />
-//       <Stack.Screen 
-//         name="Chat" 
-//         component={ChatScreen} 
-//         options={{ headerShown: false }}
-//       />
-//     </Stack.Navigator>
-//   );
-// }
 
 function EventsStackScreen() {
   return (
@@ -363,6 +303,12 @@ function OrganizationDashboardStack() {
         component={CreateEventScreen}
         options={{ headerShown: false }}
       />
+      {/* NEW: Add EditEventScreen to Dashboard Stack */}
+      <Stack.Screen 
+        name="EditEvent" 
+        component={EditEventScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="PostDetails"
         component={CreatePostScreen}
@@ -373,7 +319,6 @@ function OrganizationDashboardStack() {
         component={EventDetailsScreen}
         options={{ headerShown: false, title: 'Event Details' }}
       />
-
       <Stack.Screen 
         name="ReportsScreen" 
         component={ReportsScreen} 
@@ -396,6 +341,12 @@ function OrganizationEventsStack() {
         name="CreateEvent" 
         component={CreateEventScreen}
         options={{ headerShown: false, title: 'Create Event' }}
+      />
+      {/* NEW: Add EditEventScreen to Events Stack */}
+      <Stack.Screen 
+        name="EditEvent" 
+        component={EditEventScreen}
+        options={{ headerShown: false, title: 'Edit Event' }}
       />
       {/* NEW: Event Participants Screen */}
       <Stack.Screen 
@@ -499,7 +450,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#f5f5f5',
   },
 });
 
