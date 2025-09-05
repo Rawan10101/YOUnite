@@ -3,40 +3,28 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
-  Image,
   Platform,
-  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../contexts/AppContext';
 import { db } from '../../firebaseConfig';
-
-const STATUS_COLORS = {
-  pending: '#FF9800',
-  approved: '#4CAF50',
-  rejected: '#F44336',
-  withdrawn: '#666',
-};
-
-const STATUS_ICONS = {
-  pending: 'time-outline',
-  approved: 'checkmark-circle-outline',
-  rejected: 'close-circle-outline',
-  withdrawn: 'remove-circle-outline',
-};
 
 export default function VolunteerApplicationsScreen({ navigation }) {
   const { user } = useAppContext();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedFilter, setSelectedFilter] = useState('all');
+
+  const filters = [
+    { id: 'all', title: 'All', icon: 'list-outline' },
+    { id: 'pending', title: 'Pending', icon: 'time-outline' },
+    { id: 'approved', title: 'Approved', icon: 'checkmark-circle-outline' },
+    { id: 'rejected', title: 'Rejected', icon: 'close-circle-outline' },
+  ];
 
   useEffect(() => {
     if (!user?.uid) {
@@ -48,44 +36,42 @@ export default function VolunteerApplicationsScreen({ navigation }) {
   }, [user?.uid]);
 
   const loadApplications = async () => {
-    try {
-      setLoading(true);
-      console.log('Loading applications for volunteer:', user.uid);
+    console.log("Loading volunteer applications for:", user.uid);
+    setLoading(true);
 
-      // Get all events first
-      const eventsQuery = collection(db, 'events');
-      const eventsSnapshot = await getDocs(eventsQuery);
-      
+    try {
+      const eventsRef = collection(db, "events");
+      const eventsSnapshot = await getDocs(eventsRef);
+
       const allApplications = [];
 
-      // For each event, check if the volunteer has applied
       for (const eventDoc of eventsSnapshot.docs) {
-        const eventId = eventDoc.id;
         const eventData = eventDoc.data();
+        const eventId = eventDoc.id;
 
         try {
-          // Get applications subcollection for this event
           const applicationsQuery = query(
-            collection(db, 'events', eventId, 'applications'),
-            where('volunteerId', '==', user.uid)
+            collection(db, "events", eventId, "applications"),
+            where("volunteerId", "==", user.uid)
           );
-          
+
           const applicationsSnapshot = await getDocs(applicationsQuery);
-          
-          applicationsSnapshot.forEach(appDoc => {
+
+          applicationsSnapshot.forEach((appDoc) => {
             const appData = appDoc.data();
             allApplications.push({
               id: appDoc.id,
               ...appData,
-              eventId: eventId,
-              eventTitle: eventData.title || 'Unknown Event',
-              eventDate: eventData.date?.toDate ? eventData.date.toDate() : new Date(eventData.date),
-              eventLocation: eventData.location || 'Location TBD',
-              eventOrganization: eventData.organizationName || 'Unknown Organization',
-              eventOrganizationLogo: eventData.organizationLogo || 'https://via.placeholder.com/40',
-              eventCategory: eventData.category || 'general',
-              eventMaxVolunteers: eventData.maxVolunteers || 0,
-              eventCurrentVolunteers: eventData.registeredVolunteers?.length || 0,
+              eventId,
+              eventTitle: eventData.title,
+              eventDate: eventData.date,
+              eventLocation: eventData.location,
+              eventCategory: eventData.category,
+              organizationName: eventData.organizationName || "Organization",
+              organizationLogo: eventData.organizationLogo || "https://via.placeholder.com/50",
+              requiresApplication: eventData.requiresApplication,
+              isApproved: eventData.approvedApplicants?.includes(user.uid) || false,
+              isRegistered: eventData.registeredVolunteers?.includes(user.uid) || false,
             });
           });
         } catch (error) {
@@ -93,294 +79,295 @@ export default function VolunteerApplicationsScreen({ navigation }) {
         }
       }
 
-      // Sort by application date (most recent first)
+      // Sort by creation date (newest first)
       allApplications.sort((a, b) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
-        return dateB - dateA;
+        const aDate = a.createdAt?.seconds
+          ? new Date(a.createdAt.seconds * 1000)
+          : new Date(0);
+        const bDate = b.createdAt?.seconds
+          ? new Date(b.createdAt.seconds * 1000)
+          : new Date(0);
+        return bDate - aDate;
       });
 
       setApplications(allApplications);
-      console.log(`Loaded ${allApplications.length} applications`);
-
+      console.log(`Loaded ${allApplications.length} applications for volunteer`);
     } catch (error) {
-      console.error('Error loading applications:', error);
-      Alert.alert('Error', 'Failed to load applications. Please try again.');
+      console.error("Error loading applications:", error);
+      setApplications([]);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    loadApplications();
   };
 
   const getFilteredApplications = () => {
-    if (selectedStatus === 'all') {
+    if (selectedFilter === 'all') {
       return applications;
     }
-    return applications.filter(app => app.status === selectedStatus);
+    return applications.filter(app => app.status === selectedFilter);
   };
 
-  const getStatusText = (status) => {
+  const getApplicationStatusColor = (status) => {
     switch (status) {
-      case 'pending': return 'Pending Review';
+      case 'approved': return '#10B981';
+      case 'rejected': return '#EF4444';
+      case 'withdrawn': return '#6B7280';
+      case 'pending':
+      default: return '#F59E0B';
+    }
+  };
+
+  const getApplicationStatusText = (status) => {
+    switch (status) {
       case 'approved': return 'Approved';
       case 'rejected': return 'Rejected';
       case 'withdrawn': return 'Withdrawn';
-      default: return 'Unknown';
+      case 'pending':
+      default: return 'Pending Review';
     }
   };
 
-  const formatDate = (date) => {
-    if (!date) return 'Unknown date';
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const getEventStatus = (eventDate) => {
-    if (!eventDate) return 'unknown';
-    const now = new Date();
-    const diffTime = eventDate - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0) return 'past';
-    if (diffDays === 0) return 'today';
-    if (diffDays <= 7) return 'soon';
-    return 'upcoming';
-  };
-
-  const getEventStatusColor = (status) => {
-    switch (status) {
-      case 'past': return '#666';
-      case 'today': return '#FF6B35';
-      case 'soon': return '#FF9800';
-      case 'upcoming': return '#4e8cff';
+  const getCategoryColor = (category) => {
+    switch (category) {
+      case 'environment': return '#4CAF50';
+      case 'community': return '#2196F3';
+      case 'animals': return '#FF9800';
+      case 'education': return '#9C27B0';
+      case 'healthcare': return '#F44336';
+      case 'food': return '#607D8B';
+      case 'emergency': return '#F44336';
+      case 'seniors': return '#9C27B0';
       default: return '#666';
     }
   };
 
-  const handleViewEvent = (application) => {
-    // Navigate to event details
-    navigation.navigate('EventDetails', { 
-      event: {
-        id: application.eventId,
-        title: application.eventTitle,
-        date: application.eventDate,
-        location: application.eventLocation,
-        organizationName: application.eventOrganization,
-        organizationLogo: application.eventOrganizationLogo,
-        category: application.eventCategory,
-        maxVolunteers: application.eventMaxVolunteers,
-        registeredVolunteers: Array(application.eventCurrentVolunteers).fill(''),
-      }
+  const formatDate = (date) => {
+    if (!date) return 'TBD';
+    const dateObj = date.seconds ? new Date(date.seconds * 1000) : (date.toDate ? date.toDate() : new Date(date));
+    return dateObj.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
     });
   };
 
-  const handleWithdrawApplication = (application) => {
-    Alert.alert(
-      'Withdraw Application',
-      `Are you sure you want to withdraw your application for "${application.eventTitle}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Withdraw',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // TODO: Implement withdrawal logic
-              console.log('Withdraw application:', application.id);
-              Alert.alert('Success', 'Application withdrawn successfully');
-              loadApplications(); // Refresh the list
-            } catch (error) {
-              console.error('Error withdrawing application:', error);
-              Alert.alert('Error', 'Failed to withdraw application');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const renderStatusFilter = () => {
-    const statusOptions = [
-      { key: 'all', label: 'All', count: applications.length },
-      { key: 'pending', label: 'Pending', count: applications.filter(a => a.status === 'pending').length },
-      { key: 'approved', label: 'Approved', count: applications.filter(a => a.status === 'approved').length },
-      { key: 'rejected', label: 'Rejected', count: applications.filter(a => a.status === 'rejected').length },
-    ];
-
-    return (
-      <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {statusOptions.map(option => (
+  const renderFilterTabs = () => (
+    <View style={styles.filtersContainer}>
+      <FlatList
+        data={filters}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.filtersList}
+        renderItem={({ item }) => {
+          const count = item.id === 'all' 
+            ? applications.length 
+            : applications.filter(app => app.status === item.id).length;
+          
+          return (
             <TouchableOpacity
-              key={option.key}
               style={[
                 styles.filterButton,
-                selectedStatus === option.key && styles.activeFilterButton
+                selectedFilter === item.id && styles.filterButtonSelected
               ]}
-              onPress={() => setSelectedStatus(option.key)}
+              onPress={() => setSelectedFilter(item.id)}
             >
-              <Text style={[
-                styles.filterButtonText,
-                selectedStatus === option.key && styles.activeFilterButtonText
-              ]}>
-                {option.label}
+              <Ionicons
+                name={item.icon}
+                size={16}
+                color={selectedFilter === item.id ? '#FFFFFF' : '#6B7280'}
+              />
+              <Text
+                style={[
+                  styles.filterText,
+                  selectedFilter === item.id && styles.filterTextSelected
+                ]}
+              >
+                {item.title}
               </Text>
-              {option.count > 0 && (
+              {count > 0 && (
                 <View style={[
                   styles.filterBadge,
-                  selectedStatus === option.key && styles.activeFilterBadge
+                  selectedFilter === item.id && styles.filterBadgeSelected
                 ]}>
                   <Text style={[
                     styles.filterBadgeText,
-                    selectedStatus === option.key && styles.activeFilterBadgeText
+                    selectedFilter === item.id && styles.filterBadgeTextSelected
                   ]}>
-                    {option.count}
+                    {count}
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-    );
-  };
+          );
+        }}
+      />
+    </View>
+  );
 
-  const renderApplicationCard = ({ item, index }) => {
-    const eventStatus = getEventStatus(item.eventDate);
-    const canWithdraw = item.status === 'pending' && eventStatus !== 'past';
-
-    return (
-      <Animatable.View
-        animation="fadeInUp"
-        delay={index * 100}
-        style={styles.applicationCard}
-      >
-        {/* Application Header */}
-        <View style={styles.applicationHeader}>
-          <Image
-            source={{ uri: item.eventOrganizationLogo }}
-            style={styles.organizationLogo}
-          />
-          <View style={styles.applicationHeaderInfo}>
-            <Text style={styles.eventTitle} numberOfLines={2}>
-              {item.eventTitle}
-            </Text>
-            <Text style={styles.organizationName}>
-              {item.eventOrganization}
-            </Text>
-            <Text style={styles.applicationDate}>
-              Applied: {formatDate(item.createdAt?.toDate ? item.createdAt.toDate() : new Date(item.createdAt))}
-            </Text>
-          </View>
-          
-          {/* Status Badge */}
-          <View style={[
-            styles.statusBadge,
-            { backgroundColor: STATUS_COLORS[item.status] || STATUS_COLORS.pending }
-          ]}>
-            <Ionicons 
-              name={STATUS_ICONS[item.status] || STATUS_ICONS.pending} 
-              size={12} 
-              color="#fff" 
-            />
-            <Text style={styles.statusText}>
-              {getStatusText(item.status)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Event Details */}
-        <View style={styles.eventDetails}>
-          <View style={styles.eventDetailRow}>
-            <Ionicons name="calendar-outline" size={16} color="#666" />
-            <Text style={styles.eventDetailText}>
-              {item.eventDate ? formatDate(item.eventDate) : 'Date TBD'}
-            </Text>
-            <View style={[
-              styles.eventStatusBadge,
-              { backgroundColor: getEventStatusColor(eventStatus) }
-            ]}>
-              <Text style={styles.eventStatusText}>
-                {eventStatus === 'past' ? 'Past' : 
-                 eventStatus === 'today' ? 'Today' :
-                 eventStatus === 'soon' ? 'Soon' : 'Upcoming'}
+  const renderApplicationCard = ({ item }) => (
+    <TouchableOpacity
+      style={styles.applicationCard}
+      onPress={() => navigation.navigate('EventDetails', { 
+        event: {
+          id: item.eventId,
+          title: item.eventTitle,
+          date: item.eventDate,
+          location: item.eventLocation,
+          category: item.eventCategory,
+          organization: item.organizationName,
+          organizationLogo: item.organizationLogo,
+          requiresApplication: item.requiresApplication,
+        }
+      })}
+    >
+      <View style={styles.applicationHeader}>
+        <View style={styles.applicationInfo}>
+          <Text style={styles.eventTitle} numberOfLines={2}>
+            {item.eventTitle}
+          </Text>
+          <Text style={styles.organizationName}>{item.organizationName}</Text>
+          <View style={styles.eventDetails}>
+            <View style={styles.eventDetailItem}>
+              <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+              <Text style={styles.eventDetailText}>{formatDate(item.eventDate)}</Text>
+            </View>
+            <View style={styles.eventDetailItem}>
+              <Ionicons name="location-outline" size={14} color="#6B7280" />
+              <Text style={styles.eventDetailText} numberOfLines={1}>
+                {item.eventLocation}
               </Text>
             </View>
           </View>
-          
-          <View style={styles.eventDetailRow}>
-            <Ionicons name="location-outline" size={16} color="#666" />
-            <Text style={styles.eventDetailText} numberOfLines={1}>
-              {item.eventLocation}
-            </Text>
-          </View>
-          
-          <View style={styles.eventDetailRow}>
-            <Ionicons name="people-outline" size={16} color="#666" />
-            <Text style={styles.eventDetailText}>
-              {item.eventCurrentVolunteers}/{item.eventMaxVolunteers} volunteers
-            </Text>
-          </View>
         </View>
-
-        {/* Application Message */}
-        {item.message && (
-          <View style={styles.messageContainer}>
-            <Text style={styles.messageLabel}>Your message:</Text>
-            <Text style={styles.messageText} numberOfLines={3}>
-              {item.message}
+        
+        <View style={styles.applicationMeta}>
+          <View style={[
+            styles.statusBadge,
+            { backgroundColor: getApplicationStatusColor(item.status) }
+          ]}>
+            <Text style={styles.statusText}>
+              {getApplicationStatusText(item.status)}
             </Text>
           </View>
+          
+          {item.eventCategory && (
+            <View style={[
+              styles.categoryBadge,
+              { backgroundColor: getCategoryColor(item.eventCategory) }
+            ]}>
+              <Text style={styles.categoryText}>{item.eventCategory}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      
+      {/* Application Status Details - ENHANCED */}
+      <View style={styles.applicationStatusDetails}>
+        <Text style={styles.applicationDate}>
+          Applied: {formatDate(item.createdAt)}
+        </Text>
+        
+        {item.status === 'approved' && item.approvedAt && (
+          <Text style={styles.approvedDate}>
+            Approved: {formatDate(item.approvedAt)}
+          </Text>
+        )}
+        
+        {item.status === 'rejected' && item.rejectedAt && (
+          <Text style={styles.rejectedDate}>
+            Rejected: {formatDate(item.rejectedAt)}
+          </Text>
         )}
 
-        {/* Response from Organization */}
-        {item.response && (
-          <View style={styles.responseContainer}>
-            <Text style={styles.responseLabel}>Organization response:</Text>
-            <Text style={styles.responseText} numberOfLines={3}>
-              {item.response}
-            </Text>
+        {/* Registration Status for Approved Applications */}
+        {item.status === 'approved' && (
+          <View style={styles.registrationStatus}>
+            {item.isRegistered ? (
+              <View style={styles.registeredIndicator}>
+                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                <Text style={styles.registeredText}>Registered for Event</Text>
+              </View>
+            ) : (
+              <View style={styles.notRegisteredIndicator}>
+                <Ionicons name="alert-circle" size={16} color="#F59E0B" />
+                <Text style={styles.notRegisteredText}>Not Registered Yet</Text>
+              </View>
+            )}
           </View>
         )}
+      </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
+      {/* Application Answers Preview - NEW */}
+      {item.answers && Object.keys(item.answers).length > 0 && (
+        <View style={styles.answersPreview}>
+          <Text style={styles.answersLabel}>Your Responses:</Text>
+          {Object.entries(item.answers).slice(0, 2).map(([questionIndex, answer]) => (
+            <View key={questionIndex} style={styles.answerPreview}>
+              <Text style={styles.answerText} numberOfLines={2}>
+                {answer}
+              </Text>
+            </View>
+          ))}
+          {Object.keys(item.answers).length > 2 && (
+            <Text style={styles.moreAnswers}>
+              +{Object.keys(item.answers).length - 2} more responses
+            </Text>
+          )}
+        </View>
+      )}
+      
+      <View style={styles.applicationFooter}>
+        <View style={styles.applicationActions}>
           <TouchableOpacity
             style={styles.viewEventButton}
-            onPress={() => handleViewEvent(item)}
+            onPress={() => navigation.navigate('EventDetails', { 
+              event: {
+                id: item.eventId,
+                title: item.eventTitle,
+                date: item.eventDate,
+                location: item.eventLocation,
+                category: item.eventCategory,
+                organization: item.organizationName,
+                organizationLogo: item.organizationLogo,
+                requiresApplication: item.requiresApplication,
+              }
+            })}
           >
-            <Ionicons name="eye-outline" size={16} color="#4e8cff" />
-            <Text style={styles.viewEventButtonText}>View Event</Text>
+            <Ionicons name="eye-outline" size={16} color="#6366F1" />
+            <Text style={styles.viewEventText}>View Event</Text>
           </TouchableOpacity>
-          
-          {canWithdraw && (
+
+          {/* Action Button Based on Status */}
+          {item.status === 'approved' && !item.isRegistered && (
             <TouchableOpacity
-              style={styles.withdrawButton}
-              onPress={() => handleWithdrawApplication(item)}
+              style={styles.registerNowButton}
+              onPress={() => navigation.navigate('EventDetails', { 
+                event: {
+                  id: item.eventId,
+                  title: item.eventTitle,
+                  date: item.eventDate,
+                  location: item.eventLocation,
+                  category: item.eventCategory,
+                  organization: item.organizationName,
+                  organizationLogo: item.organizationLogo,
+                  requiresApplication: item.requiresApplication,
+                }
+              })}
             >
-              <Ionicons name="close-outline" size={16} color="#F44336" />
-              <Text style={styles.withdrawButtonText}>Withdraw</Text>
+              <Ionicons name="person-add-outline" size={16} color="#10B981" />
+              <Text style={styles.registerNowText}>Register Now</Text>
             </TouchableOpacity>
           )}
         </View>
-      </Animatable.View>
-    );
-  };
+      </View>
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4e8cff" />
+        <ActivityIndicator size="large" color="#6366F1" />
         <Text style={styles.loadingText}>Loading your applications...</Text>
       </View>
     );
@@ -394,45 +381,53 @@ export default function VolunteerApplicationsScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Applications</Text>
         <Text style={styles.headerSubtitle}>
-          Track your volunteer applications
+          Track your event applications and status
         </Text>
       </View>
 
-      {/* Status Filter */}
-      {renderStatusFilter()}
+      {/* Filter Tabs */}
+      {renderFilterTabs()}
 
       {/* Applications List */}
-      <FlatList
-        data={filteredApplications}
-        keyExtractor={(item) => `${item.eventId}-${item.id}`}
-        renderItem={renderApplicationCard}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons 
-              name={selectedStatus === 'all' ? 'document-text-outline' : 'filter-outline'} 
-              size={64} 
-              color="#ccc" 
-            />
-            <Text style={styles.emptyText}>
-              {selectedStatus === 'all' 
-                ? 'No applications yet'
-                : `No ${selectedStatus} applications`
-              }
-            </Text>
-            <Text style={styles.emptySubtext}>
-              {selectedStatus === 'all'
-                ? 'Apply to events to see your applications here'
-                : 'Try selecting a different status filter'
-              }
-            </Text>
-          </View>
-        }
-      />
+      {filteredApplications.length > 0 ? (
+        <FlatList
+          data={filteredApplications}
+          keyExtractor={item => item.id}
+          renderItem={renderApplicationCard}
+          contentContainerStyle={styles.applicationsList}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+        />
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Ionicons 
+            name="document-text-outline" 
+            size={64} 
+            color="#D1D5DB" 
+          />
+          <Text style={styles.emptyTitle}>
+            {selectedFilter === 'all' 
+              ? 'No Applications Yet' 
+              : `No ${selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1)} Applications`
+            }
+          </Text>
+          <Text style={styles.emptyText}>
+            {selectedFilter === 'all'
+              ? 'Apply to events that require applications to see them here.'
+              : `You don't have any ${selectedFilter} applications at the moment.`
+            }
+          </Text>
+          {selectedFilter === 'all' && (
+            <TouchableOpacity
+              style={styles.browseEventsButton}
+              onPress={() => navigation.navigate('Events')}
+            >
+              <Ionicons name="search-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.browseEventsText}>Browse Events</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -440,7 +435,7 @@ export default function VolunteerApplicationsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F9FAFB',
   },
 
   // Loading
@@ -448,63 +443,70 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: '#6B7280',
+    fontWeight: '500',
   },
 
   // Header
   header: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: '#E5E7EB',
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2B2B2B',
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#111827',
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#6B7280',
     marginTop: 4,
+    fontWeight: '400',
   },
 
-  // Filter
-  filterContainer: {
-    backgroundColor: '#fff',
+  // Filters
+  filtersContainer: {
+    backgroundColor: '#FFFFFF',
     paddingVertical: 16,
-    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: '#E5E7EB',
+  },
+  filtersList: {
+    paddingHorizontal: 24,
   },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
     paddingHorizontal: 16,
-    marginRight: 12,
+    paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#F3F4F6',
+    marginRight: 12,
   },
-  activeFilterButton: {
-    backgroundColor: '#4e8cff',
+  filterButtonSelected: {
+    backgroundColor: '#6366F1',
   },
-  filterButtonText: {
+  filterText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
+    fontWeight: '500',
+    color: '#6B7280',
+    marginLeft: 6,
   },
-  activeFilterButtonText: {
-    color: '#fff',
+  filterTextSelected: {
+    color: '#FFFFFF',
   },
   filterBadge: {
-    backgroundColor: '#666',
+    backgroundColor: '#D1D5DB',
     borderRadius: 10,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -512,179 +514,210 @@ const styles = StyleSheet.create({
     minWidth: 20,
     alignItems: 'center',
   },
-  activeFilterBadge: {
-    backgroundColor: '#fff',
+  filterBadgeSelected: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
   filterBadgeText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
   },
-  activeFilterBadgeText: {
-    color: '#4e8cff',
-  },
-
-  // List
-  listContainer: {
-    padding: 20,
+  filterBadgeTextSelected: {
+    color: '#FFFFFF',
   },
 
-  // Application Card
+  // Applications List
+  applicationsList: {
+    padding: 24,
+  },
+  separator: {
+    height: 16,
+  },
+
+  // Application Card - ENHANCED
   applicationCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
+    elevation: 2,
   },
-
-  // Application Header
   applicationHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     marginBottom: 16,
   },
-  organizationLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
-  },
-  applicationHeaderInfo: {
+  applicationInfo: {
     flex: 1,
+    marginRight: 16,
   },
   eventTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#2B2B2B',
+    color: '#111827',
     marginBottom: 4,
+    lineHeight: 24,
   },
   organizationName: {
     fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
+    color: '#6B7280',
+    marginBottom: 8,
   },
-  applicationDate: {
-    fontSize: 12,
-    color: '#999',
+  eventDetails: {
+    flexDirection: 'column',
   },
-  statusBadge: {
+  eventDetailItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 4,
+  },
+  eventDetailText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 6,
+    flex: 1,
+  },
+  applicationMeta: {
+    alignItems: 'flex-end',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 8,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  categoryBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    marginLeft: 8,
   },
-  statusText: {
+  categoryText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#fff',
+    color: '#FFFFFF',
+    textTransform: 'capitalize',
+  },
+
+  // Application Status Details - NEW
+  applicationStatusDetails: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  applicationDate: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  approvedDate: {
+    fontSize: 12,
+    color: '#10B981',
+    marginBottom: 4,
+  },
+  rejectedDate: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginBottom: 4,
+  },
+  registrationStatus: {
+    marginTop: 8,
+  },
+  registeredIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  registeredText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  notRegisteredIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  notRegisteredText: {
+    fontSize: 12,
+    color: '#F59E0B',
+    fontWeight: '500',
     marginLeft: 4,
   },
 
-  // Event Details
-  eventDetails: {
+  // Answers Preview - NEW
+  answersPreview: {
+    backgroundColor: '#F9FAFB',
+    padding: 12,
+    borderRadius: 8,
     marginBottom: 16,
   },
-  eventDetailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  answersLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
     marginBottom: 8,
   },
-  eventDetailText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
-    flex: 1,
+  answerPreview: {
+    marginBottom: 6,
   },
-  eventStatusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  eventStatusText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#fff',
-  },
-
-  // Message
-  messageContainer: {
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  messageLabel: {
+  answerText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 4,
+    color: '#6B7280',
+    lineHeight: 16,
   },
-  messageText: {
-    fontSize: 14,
-    color: '#333',
-    lineHeight: 20,
-  },
-
-  // Response
-  responseContainer: {
-    backgroundColor: '#E3F2FD',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  responseLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1976D2',
-    marginBottom: 4,
-  },
-  responseText: {
-    fontSize: 14,
-    color: '#1976D2',
-    lineHeight: 20,
+  moreAnswers: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 
-  // Action Buttons
-  actionButtons: {
+  applicationFooter: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  applicationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
     justifyContent: 'space-between',
   },
   viewEventButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E3F2FD',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
-    flex: 1,
-    marginRight: 8,
-    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#F0F9FF',
   },
-  viewEventButtonText: {
-    color: '#4e8cff',
-    fontWeight: '600',
+  viewEventText: {
+    fontSize: 12,
+    color: '#6366F1',
+    fontWeight: '500',
     marginLeft: 4,
   },
-  withdrawButton: {
+  registerNowButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
-    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
   },
-  withdrawButtonText: {
-    color: '#F44336',
-    fontWeight: '600',
+  registerNowText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '500',
     marginLeft: 4,
   },
 
@@ -693,21 +726,36 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingHorizontal: 48,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
+    fontSize: 16,
+    color: '#6B7280',
     textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 20,
+  browseEventsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  browseEventsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
   },
 });
 

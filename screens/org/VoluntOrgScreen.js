@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { arrayUnion, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,6 +26,7 @@ export default function VolunteersTab({ navigation }) {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [followerStats, setFollowerStats] = useState(null);
+  const [followersUnsubscribe, setFollowersUnsubscribe] = useState(null);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -35,12 +36,19 @@ export default function VolunteersTab({ navigation }) {
 
     setLoading(true);
     loadOrganizationData();
+
+    // Cleanup function to unsubscribe from real-time listeners
+    return () => {
+      if (followersUnsubscribe) {
+        followersUnsubscribe();
+      }
+    };
   }, [user?.uid]);
 
   const loadOrganizationData = async () => {
     try {
       await Promise.all([
-        loadFollowers(),
+        setupFollowersListener(),
         loadApplications()
       ]);
     } catch (error) {
@@ -51,23 +59,22 @@ export default function VolunteersTab({ navigation }) {
     }
   };
 
-  const loadFollowers = async () => {
-    try {
-      console.log('Loading followers for organization:', user.uid);
+  const setupFollowersListener = () => {
+    return new Promise((resolve) => {
+      console.log('Setting up real-time followers listener for organization:', user.uid);
       
-      const followersData = await FollowersManager.getOrganizationFollowers(user.uid);
-      setFollowers(followersData);
+      const unsubscribe = FollowersManager.subscribeToOrganizationFollowers(
+        user.uid,
+        (followersData, stats) => {
+          console.log('Received real-time followers update:', followersData.length, 'followers');
+          setFollowers(followersData);
+          setFollowerStats(stats);
+          resolve();
+        }
+      );
       
-      const stats = await FollowersManager.getFollowerStats(user.uid);
-      setFollowerStats(stats);
-      
-      console.log(`Loaded ${followersData.length} followers`);
-      
-    } catch (error) {
-      console.error('Error loading followers:', error);
-      setFollowers([]);
-      setFollowerStats(null);
-    }
+      setFollowersUnsubscribe(() => unsubscribe);
+    });
   };
 
   const loadApplications = async () => {
@@ -99,6 +106,7 @@ export default function VolunteersTab({ navigation }) {
               ...appData,
               eventName: eventTitle,
               eventId: eventId,
+              eventData: eventData, // Include full event data for approval process
             });
           });
           
@@ -106,8 +114,12 @@ export default function VolunteersTab({ navigation }) {
             allApplications.push({
               eventId: eventId,
               eventName: eventTitle,
+              eventData: eventData,
               applications: eventApplications,
               applicationCount: eventApplications.length,
+              pendingCount: eventApplications.filter(app => app.status === 'pending').length,
+              approvedCount: eventApplications.filter(app => app.status === 'approved').length,
+              rejectedCount: eventApplications.filter(app => app.status === 'rejected').length,
             });
           }
           
@@ -127,17 +139,26 @@ export default function VolunteersTab({ navigation }) {
     }
   };
 
-  const handleApproveApplication = async (appId, eventId) => {
+  // ENHANCED: Handle application approval with proper event updates
+  const handleApproveApplication = async (appId, eventId, volunteerId) => {
     try {
+      // Update application status
       const appRef = doc(db, 'events', eventId, 'applications', appId);
       await updateDoc(appRef, {
         status: 'approved',
-        approvedAt: new Date(),
+        approvedAt: serverTimestamp(),
         approvedBy: user.uid,
+      });
+
+      // Add volunteer to approved applicants list in event
+      const eventRef = doc(db, 'events', eventId);
+      await updateDoc(eventRef, {
+        approvedApplicants: arrayUnion(volunteerId),
+        updatedAt: serverTimestamp(),
       });
       
       await loadApplications();
-      Alert.alert('Success', 'Application approved successfully');
+      Alert.alert('Success', 'Application approved successfully! The volunteer can now register for the event.');
       
     } catch (error) {
       console.error('Error approving application:', error);
@@ -145,22 +166,44 @@ export default function VolunteersTab({ navigation }) {
     }
   };
 
-  const handleRejectApplication = async (appId, eventId) => {
-    try {
-      const appRef = doc(db, 'events', eventId, 'applications', appId);
-      await updateDoc(appRef, {
-        status: 'rejected',
-        rejectedAt: new Date(),
-        rejectedBy: user.uid,
-      });
-      
-      await loadApplications();
-      Alert.alert('Success', 'Application rejected successfully');
-      
-    } catch (error) {
-      console.error('Error rejecting application:', error);
-      Alert.alert('Error', 'Failed to reject application');
-    }
+  // ENHANCED: Handle application rejection
+  const handleRejectApplication = async (appId, eventId, volunteerId) => {
+    Alert.alert(
+      'Reject Application',
+      'Are you sure you want to reject this application?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Update application status
+              const appRef = doc(db, 'events', eventId, 'applications', appId);
+              await updateDoc(appRef, {
+                status: 'rejected',
+                rejectedAt: serverTimestamp(),
+                rejectedBy: user.uid,
+              });
+
+              // Add volunteer to rejected applicants list in event
+              const eventRef = doc(db, 'events', eventId);
+              await updateDoc(eventRef, {
+                rejectedApplicants: arrayUnion(volunteerId),
+                updatedAt: serverTimestamp(),
+              });
+              
+              await loadApplications();
+              Alert.alert('Success', 'Application rejected successfully');
+              
+            } catch (error) {
+              console.error('Error rejecting application:', error);
+              Alert.alert('Error', 'Failed to reject application');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleRemoveFollower = async (followerId) => {
@@ -175,7 +218,7 @@ export default function VolunteersTab({ navigation }) {
           onPress: async () => {
             try {
               await FollowersManager.removeFollower(user.uid, followerId);
-              await loadFollowers();
+              // No need to manually refresh - real-time listener will handle the update
               Alert.alert('Success', 'Follower removed successfully');
             } catch (error) {
               console.error('Error removing follower:', error);
@@ -193,7 +236,7 @@ export default function VolunteersTab({ navigation }) {
         let count = 0;
         switch (section) {
           case 'Applications':
-            count = applications.reduce((total, eventGroup) => total + eventGroup.applications.length, 0);
+            count = applications.reduce((total, eventGroup) => total + eventGroup.pendingCount, 0);
             break;
           case 'Followers':
             count = followers.length;
@@ -236,6 +279,7 @@ export default function VolunteersTab({ navigation }) {
     </View>
   );
 
+  // ENHANCED: Application card with better UI and actions
   const renderApplicationCard = ({ item }) => (
     <View style={styles.applicationCard}>
       <View style={styles.applicationHeader}>
@@ -262,7 +306,20 @@ export default function VolunteersTab({ navigation }) {
         }
       </Text>
       
-      {item.message && (
+      {/* Application Answers - NEW */}
+      {item.answers && Object.keys(item.answers).length > 0 && (
+        <View style={styles.answersContainer}>
+          <Text style={styles.answersLabel}>Application Responses:</Text>
+          {Object.entries(item.answers).map(([questionIndex, answer]) => (
+            <View key={questionIndex} style={styles.answerItem}>
+              <Text style={styles.answerText}>{answer}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Legacy message support */}
+      {item.message && !item.answers && (
         <View style={styles.messageContainer}>
           <Text style={styles.messageLabel}>Message:</Text>
           <Text style={styles.applicationMessage}>{item.message}</Text>
@@ -273,18 +330,37 @@ export default function VolunteersTab({ navigation }) {
         <View style={styles.applicationActions}>
           <TouchableOpacity
             style={styles.approveButton}
-            onPress={() => handleApproveApplication(item.id, item.eventId)}
+            onPress={() => handleApproveApplication(item.id, item.eventId, item.volunteerId)}
           >
             <Ionicons name="checkmark-circle" size={16} color="#fff" />
             <Text style={styles.approveText}>Approve</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.rejectButton}
-            onPress={() => handleRejectApplication(item.id, item.eventId)}
+            onPress={() => handleRejectApplication(item.id, item.eventId, item.volunteerId)}
           >
             <Ionicons name="close-circle" size={16} color="#fff" />
             <Text style={styles.rejectText}>Reject</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Show approval/rejection info */}
+      {item.status === 'approved' && item.approvedAt && (
+        <View style={styles.statusInfo}>
+          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+          <Text style={styles.statusInfoText}>
+            Approved on {new Date(item.approvedAt.seconds * 1000).toLocaleDateString()}
+          </Text>
+        </View>
+      )}
+
+      {item.status === 'rejected' && item.rejectedAt && (
+        <View style={styles.statusInfo}>
+          <Ionicons name="close-circle" size={16} color="#EF4444" />
+          <Text style={styles.statusInfoText}>
+            Rejected on {new Date(item.rejectedAt.seconds * 1000).toLocaleDateString()}
+          </Text>
         </View>
       )}
     </View>
@@ -345,13 +421,24 @@ export default function VolunteersTab({ navigation }) {
     </View>
   );
 
+  // ENHANCED: Event applications group with statistics
   const renderEventApplicationsGroup = ({ item }) => (
     <View style={styles.eventApplicationsGroup}>
       <View style={styles.eventApplicationsHeader}>
         <View style={styles.eventHeaderLeft}>
           <Text style={styles.eventApplicationsTitle}>{item.eventName}</Text>
-          <View style={styles.applicationCountBadge}>
-            <Text style={styles.applicationCountText}>{item.applicationCount}</Text>
+          <View style={styles.applicationStats}>
+            <View style={styles.statBadge}>
+              <Text style={styles.statBadgeText}>{item.pendingCount} Pending</Text>
+            </View>
+            <View style={[styles.statBadge, { backgroundColor: '#10B981' }]}>
+              <Text style={styles.statBadgeText}>{item.approvedCount} Approved</Text>
+            </View>
+            {item.rejectedCount > 0 && (
+              <View style={[styles.statBadge, { backgroundColor: '#EF4444' }]}>
+                <Text style={styles.statBadgeText}>{item.rejectedCount} Rejected</Text>
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -393,7 +480,7 @@ export default function VolunteersTab({ navigation }) {
       case 'Followers':
         return 'No followers yet. Share your organization to gain followers!';
       case 'Applications':
-        return 'No applications yet. Create events to receive applications!';
+        return 'No applications yet. Create events that require applications to receive them!';
       default:
         return 'No data available';
     }
@@ -415,6 +502,30 @@ export default function VolunteersTab({ navigation }) {
         <Text style={styles.headerTitle}>Volunteers</Text>
         <Text style={styles.headerSubtitle}>Manage your volunteer community</Text>
         
+        {/* Application Stats - NEW */}
+        {selectedSection === 'Applications' && applications.length > 0 && (
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>
+                {applications.reduce((total, eventGroup) => total + eventGroup.pendingCount, 0)}
+              </Text>
+              <Text style={styles.statLabel}>Pending</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>
+                {applications.reduce((total, eventGroup) => total + eventGroup.approvedCount, 0)}
+              </Text>
+              <Text style={styles.statLabel}>Approved</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>
+                {applications.reduce((total, eventGroup) => total + eventGroup.applicationCount, 0)}
+              </Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+          </View>
+        )}
+
         {/* Follower Stats */}
         {followerStats && selectedSection === 'Followers' && (
           <View style={styles.statsContainer}>
@@ -502,25 +613,25 @@ const styles = StyleSheet.create({
     fontWeight: '400',
   },
 
-  // Stats Container
+  // Stats Container - ENHANCED
   statsContainer: {
     flexDirection: 'row',
     marginTop: 20,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#6366F1',
+    color: '#111827',
   },
   statLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#6B7280',
     marginTop: 4,
     fontWeight: '500',
@@ -536,22 +647,20 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
   },
   tab: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
-    marginHorizontal: 4,
-    alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    marginRight: 12,
   },
   activeTab: {
     backgroundColor: '#6366F1',
   },
   tabText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#6B7280',
   },
   activeTabText: {
@@ -560,10 +669,10 @@ const styles = StyleSheet.create({
   tabBadge: {
     backgroundColor: '#D1D5DB',
     borderRadius: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     marginLeft: 8,
-    minWidth: 24,
+    minWidth: 20,
     alignItems: 'center',
   },
   activeTabBadge: {
@@ -586,11 +695,57 @@ const styles = StyleSheet.create({
     height: 16,
   },
 
-  // Application Card
-  applicationCard: {
+  // Event Applications Group - ENHANCED
+  eventApplicationsGroup: {
     backgroundColor: '#FFFFFF',
-    padding: 20,
     borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  eventApplicationsHeader: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  eventHeaderLeft: {
+    flex: 1,
+  },
+  eventApplicationsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  applicationStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  statBadge: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginRight: 8,
+    marginBottom: 4,
+  },
+  statBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+
+  // Application Card - ENHANCED
+  applicationCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
@@ -602,22 +757,22 @@ const styles = StyleSheet.create({
   },
   applicationInfo: {
     flex: 1,
+    marginRight: 12,
   },
   volunteerName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+    marginBottom: 4,
   },
   volunteerEmail: {
     fontSize: 14,
     color: '#6B7280',
-    marginTop: 2,
   },
   applicationStatusBadge: {
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginLeft: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   applicationStatusText: {
     fontSize: 12,
@@ -625,61 +780,103 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   applicationDate: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#6B7280',
     marginBottom: 12,
   },
-  messageContainer: {
-    backgroundColor: '#F9FAFB',
-    padding: 12,
+
+  // Application Answers - NEW
+  answersContainer: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  answersLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  answerItem: {
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  answerText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+  },
+
+  // Legacy message support
+  messageContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
     marginBottom: 16,
   },
   messageLabel: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
     color: '#374151',
     marginBottom: 4,
   },
   applicationMessage: {
     fontSize: 14,
-    color: '#111827',
+    color: '#374151',
     lineHeight: 20,
   },
+
   applicationActions: {
     flexDirection: 'row',
-    gap: 12,
+    justifyContent: 'space-between',
   },
   approveButton: {
-    flex: 1,
+    flex: 0.48,
+    backgroundColor: '#10B981',
+    borderRadius: 8,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#10B981',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 6,
   },
   approveText: {
     color: '#FFFFFF',
     fontWeight: '600',
-    fontSize: 14,
+    marginLeft: 6,
   },
   rejectButton: {
-    flex: 1,
+    flex: 0.48,
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EF4444',
-    paddingVertical: 12,
-    borderRadius: 8,
-    gap: 6,
   },
   rejectText: {
     color: '#FFFFFF',
     fontWeight: '600',
-    fontSize: 14,
+    marginLeft: 6,
   },
+
+  // Status Info - NEW
+  statusInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  statusInfoText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 6,
+  },
+
   applicationSeparator: {
     height: 12,
   },
@@ -687,17 +884,22 @@ const styles = StyleSheet.create({
   // Follower Card
   followerCard: {
     flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    padding: 20,
     borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     marginRight: 16,
   },
   followerInfo: {
@@ -707,16 +909,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
+    marginBottom: 4,
   },
   followerRole: {
     fontSize: 14,
     color: '#6B7280',
-    marginTop: 2,
+    marginBottom: 4,
   },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginBottom: 4,
   },
   followerLocation: {
     fontSize: 12,
@@ -726,66 +929,37 @@ const styles = StyleSheet.create({
   skillsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
   },
   skillsLabel: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#374151',
     marginRight: 4,
   },
   followerSkills: {
     fontSize: 12,
-    color: '#6366F1',
+    color: '#6B7280',
     flex: 1,
   },
   followerActions: {
     flexDirection: 'row',
-    gap: 12,
   },
   messageButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#EEF2FF',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F9FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   removeButton: {
-    padding: 8,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#FEF2F2',
-  },
-
-  // Event Applications Group
-  eventApplicationsGroup: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  eventApplicationsHeader: {
-    marginBottom: 16,
-  },
-  eventHeaderLeft: {
-    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-  },
-  eventApplicationsTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    flex: 1,
-  },
-  applicationCountBadge: {
-    backgroundColor: '#6366F1',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginLeft: 12,
-  },
-  applicationCountText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
 
   // Empty State
@@ -793,7 +967,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 80,
+    paddingVertical: 60,
   },
   emptyText: {
     fontSize: 16,
@@ -801,7 +975,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 16,
     lineHeight: 24,
-    fontWeight: '500',
   },
 });
 

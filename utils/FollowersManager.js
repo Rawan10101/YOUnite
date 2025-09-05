@@ -1,9 +1,10 @@
-// FollowersManager.js - Utility for managing followers functionality
+// FollowersManager.js - Utility for managing followers functionality with real-time updates
 import {
     arrayRemove,
     arrayUnion,
     doc,
     getDoc,
+    onSnapshot,
     serverTimestamp,
     updateDoc
 } from 'firebase/firestore';
@@ -125,7 +126,106 @@ export class FollowersManager {
   }
 
   /**
-   * Get followers data for an organization
+   * Get followers data for an organization with real-time updates
+   * @param {string} organizationId - ID of the organization
+   * @param {function} callback - Callback function to handle follower updates
+   * @returns {function} - Unsubscribe function to stop listening
+   */
+  static subscribeToOrganizationFollowers(organizationId, callback) {
+    if (!organizationId) {
+      console.error('Organization ID is required');
+      return () => {};
+    }
+
+    console.log('Setting up real-time listener for organization followers:', organizationId);
+
+    const orgRef = doc(db, 'organizations', organizationId);
+    
+    const unsubscribe = onSnapshot(orgRef, async (orgDoc) => {
+      try {
+        if (!orgDoc.exists()) {
+          console.error('Organization not found');
+          callback([], null);
+          return;
+        }
+
+        const orgData = orgDoc.data();
+        const followerIds = orgData.followers || [];
+
+        if (followerIds.length === 0) {
+          callback([], {
+            totalFollowers: 0,
+            volunteerFollowers: 0,
+            organizationFollowers: 0,
+            recentFollowers: 0,
+            followersWithSkills: 0,
+          });
+          return;
+        }
+
+        // Fetch user data for each follower
+        const followerPromises = followerIds.map(async (followerId) => {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', followerId));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              return {
+                id: userDoc.id,
+                displayName: userData.displayName || 'Unknown User',
+                email: userData.email || '',
+                photoURL: userData.photoURL || 'https://via.placeholder.com/50',
+                followedAt: userData.followedAt || null,
+                role: userData.role || 'volunteer',
+                // Add any other relevant user data
+                bio: userData.bio || '',
+                location: userData.location || '',
+                skills: userData.skills || [],
+              };
+            }
+            return null;
+          } catch (error) {
+            console.error(`Error fetching follower ${followerId}:`, error);
+            return null;
+          }
+        });
+
+        const followers = (await Promise.all(followerPromises)).filter(Boolean);
+        
+        // Sort by display name
+        followers.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+
+        // Calculate stats
+        const stats = {
+          totalFollowers: followers.length,
+          volunteerFollowers: followers.filter(f => f.role === 'volunteer').length,
+          organizationFollowers: followers.filter(f => f.role === 'organization').length,
+          recentFollowers: followers.filter(f => {
+            if (!f.followedAt) return false;
+            const followDate = f.followedAt.toDate ? f.followedAt.toDate() : new Date(f.followedAt);
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            return followDate > thirtyDaysAgo;
+          }).length,
+          followersWithSkills: followers.filter(f => f.skills && f.skills.length > 0).length,
+        };
+
+        console.log(`Real-time update: ${followers.length} followers for organization ${organizationId}`);
+        callback(followers, stats);
+
+      } catch (error) {
+        console.error('Error in followers real-time listener:', error);
+        callback([], null);
+      }
+    }, (error) => {
+      console.error('Error setting up followers listener:', error);
+      callback([], null);
+    });
+
+    return unsubscribe;
+  }
+
+  /**
+   * Get followers data for an organization (static method for backward compatibility)
    * @param {string} organizationId - ID of the organization
    * @returns {Promise<Array>} - Array of follower objects with user data
    */

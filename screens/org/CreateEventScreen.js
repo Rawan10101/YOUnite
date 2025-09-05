@@ -56,11 +56,10 @@ export default function CreateEventScreen({ navigation }) {
   // Chat feature state
   const [withChat, setWithChat] = useState(false);
   
-  // Event Type Feature
-  const [eventType, setEventType] = useState('normal');
+  // Application feature state - ENHANCED
+  const [requiresApplication, setRequiresApplication] = useState(false);
   const [applicationQuestions, setApplicationQuestions] = useState(['']);
   const [requiresApproval, setRequiresApproval] = useState(true);
-  const [externalFormUrl, setExternalFormUrl] = useState('');
   
   // UI state
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -82,30 +81,6 @@ export default function CreateEventScreen({ navigation }) {
     { id: 'food', name: 'Food Security', icon: 'restaurant', color: '#607D8B' },
     { id: 'disaster', name: 'Disaster Relief', icon: 'warning', color: '#F44336' },
     { id: 'technology', name: 'Technology', icon: 'code-slash', color: '#673AB7' },
-  ];
-
-  const eventTypes = [
-    {
-      id: 'normal',
-      name: 'Normal Event',
-      description: 'Open registration - volunteers join instantly',
-      icon: 'people-outline',
-      color: '#4CAF50'
-    },
-    {
-      id: 'application',
-      name: 'Application Required',
-      description: 'Screen volunteers with custom questions',
-      icon: 'clipboard-outline',
-      color: '#FF9800'
-    },
-    {
-      id: 'external',
-      name: 'External Form',
-      description: 'Link to Google Forms or other external form',
-      icon: 'link-outline',
-      color: '#9C27B0'
-    }
   ];
 
   // Image selection function
@@ -197,13 +172,8 @@ export default function CreateEventScreen({ navigation }) {
       return false;
     }
     
-    // Validate event type specific fields
-    if (eventType === 'external' && !externalFormUrl.trim()) {
-      Alert.alert('Error', 'Please enter an external form URL');
-      return false;
-    }
-    
-    if (eventType === 'application') {
+    // Validate application-specific fields
+    if (requiresApplication) {
       const validQuestions = applicationQuestions.filter(q => q.trim());
       if (validQuestions.length === 0) {
         Alert.alert('Error', 'Please add at least one application question');
@@ -276,24 +246,21 @@ export default function CreateEventScreen({ navigation }) {
         contactPhone: contactPhone.trim(),
         isRecurring,
         participantsCount: 0,  
+        
         // Chat feature
         withChat: withChat,
         
-        // Event Type Data
-        eventType: eventType,
+        // Application feature - ENHANCED
+        requiresApplication: requiresApplication,
         
-        // Application-specific fields
-        ...(eventType === 'application' && {
+        // Application-specific fields (only if application is required)
+        ...(requiresApplication && {
           applicationQuestions: applicationQuestions.filter(q => q.trim()),
           requiresApproval: requiresApproval,
           applicants: [],
           approvedApplicants: [],
           rejectedApplicants: [],
-        }),
-        
-        // External form specific fields
-        ...(eventType === 'external' && {
-          externalFormUrl: externalFormUrl.trim(),
+          pendingApplications: [],
         }),
         
         // Organization data
@@ -305,8 +272,8 @@ export default function CreateEventScreen({ navigation }) {
         createdAt: new Date(),
         updatedAt: new Date(),
         
-        // Volunteer tracking
-        registeredVolunteers: eventType === 'normal' ? [] : undefined,
+        // Volunteer tracking - UPDATED for application system
+        registeredVolunteers: requiresApplication ? [] : [], // Always start empty
         confirmedVolunteers: [],
         completedVolunteers: [],
         
@@ -338,9 +305,13 @@ export default function CreateEventScreen({ navigation }) {
         console.error('Failed to update organization events:', orgError);
       }
 
+      const successMessage = requiresApplication 
+        ? 'Your event has been created successfully! Volunteers will need to apply and wait for approval before joining.'
+        : `Your event has been created successfully!${withChat ? ' Event chat will be available once volunteers register.' : ''}`;
+
       Alert.alert(
         'Success!',
-        `Your event has been created successfully!${withChat ? ' Event chat will be available once volunteers register.' : ''}`,
+        successMessage,
         [
           {
             text: 'View Events',
@@ -378,10 +349,9 @@ export default function CreateEventScreen({ navigation }) {
     setContactPhone('');
     setIsRecurring(false);
     setWithChat(false);
-    setEventType('normal');
+    setRequiresApplication(false);
     setApplicationQuestions(['']);
     setRequiresApproval(true);
-    setExternalFormUrl('');
     setSelectedImage(null);
   };
 
@@ -417,446 +387,356 @@ export default function CreateEventScreen({ navigation }) {
     }
   };
 
-  const renderEventTypeSelector = () => (
-    <View style={styles.eventTypeSection}>
-      <Text style={styles.sectionTitle}>Event Type</Text>
-      <Text style={styles.sectionSubtitle}>Choose how volunteers will join your event</Text>
-      
-      {eventTypes.map((type) => (
-        <TouchableOpacity
-          key={type.id}
-          style={[
-            styles.eventTypeOption,
-            eventType === type.id && styles.eventTypeOptionSelected
-          ]}
-          onPress={() => setEventType(type.id)}
-        >
-          <View style={styles.eventTypeLeft}>
-            <View style={[styles.eventTypeIcon, { backgroundColor: type.color }]}>
-              <Ionicons name={type.icon} size={24} color="#fff" />
-            </View>
-            <View style={styles.eventTypeContent}>
-              <Text style={styles.eventTypeTitle}>{type.name}</Text>
-              <Text style={styles.eventTypeDescription}>{type.description}</Text>
-            </View>
-          </View>
-          <View style={styles.radioButton}>
-            {eventType === type.id ? (
-              <View style={styles.radioButtonSelected} />
-            ) : null}
-          </View>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
   const renderApplicationSection = () => (
     <View style={styles.applicationSection}>
-      <Text style={styles.sectionTitle}>Application Questions</Text>
-      <Text style={styles.sectionSubtitle}>Create questions to screen volunteers</Text>
-      
-      {applicationQuestions.map((question, index) => (
-        <View key={index} style={styles.questionGroup}>
-          <View style={styles.questionHeader}>
-            <Text style={styles.questionLabel}>Question {index + 1}</Text>
-            {applicationQuestions.length > 1 ? (
-              <TouchableOpacity
-                onPress={() => removeApplicationQuestion(index)}
-                style={styles.removeQuestionButton}
-              >
-                <Ionicons name="close-circle" size={20} color="#FF4757" />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-          <TextInput
-            style={styles.questionInput}
-            placeholder="Enter your screening question..."
-            value={question}
-            onChangeText={(value) => updateApplicationQuestion(index, value)}
-            multiline
-          />
-        </View>
-      ))}
-      
-      <TouchableOpacity style={styles.addQuestionButton} onPress={addApplicationQuestion}>
-        <Ionicons name="add-circle-outline" size={20} color="#4CAF50" />
-        <Text style={styles.addQuestionText}>Add Another Question</Text>
-      </TouchableOpacity>
-
-      <View style={styles.approvalToggle}>
-        <View style={styles.approvalInfo}>
-          <Text style={styles.approvalLabel}>Manual Approval Required</Text>
-          <Text style={styles.approvalDescription}>
-            Review and approve each application individually
+      <View style={styles.applicationToggleContainer}>
+        <View style={styles.applicationToggleInfo}>
+          <Text style={styles.applicationToggleLabel}>Require Application</Text>
+          <Text style={styles.applicationToggleDescription}>
+            Screen volunteers before they can join this event
           </Text>
         </View>
         <Switch
-          value={requiresApproval}
-          onValueChange={setRequiresApproval}
-          trackColor={{ false: '#ccc', true: '#4CAF50' }}
-          thumbColor={requiresApproval ? '#fff' : '#f4f3f4'}
+          value={requiresApplication}
+          onValueChange={setRequiresApplication}
+          trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+          thumbColor={requiresApplication ? '#FFFFFF' : '#9CA3AF'}
         />
       </View>
-    </View>
-  );
 
-  const renderExternalFormSection = () => (
-    <View style={styles.externalFormSection}>
-      <Text style={styles.sectionTitle}>External Registration Form</Text>
-      <Text style={styles.sectionSubtitle}>
-        Link to your Google Form or other registration platform
-      </Text>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Form URL *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="https://docs.google.com/forms/d/..."
-          value={externalFormUrl}
-          onChangeText={setExternalFormUrl}
-          keyboardType="url"
-          autoCapitalize="none"
-        />
-      </View>
-      
-      <View style={styles.externalFormNote}>
-        <Ionicons name="information-circle" size={16} color="#FF9800" />
-        <Text style={styles.externalFormNoteText}>
-          Volunteers will be redirected to your external form. Make sure the link is accessible and working.
-        </Text>
-      </View>
-    </View>
-  );
-
-  const renderCategorySelector = () => (
-    <View style={styles.categorySection}>
-      <Text style={styles.label}>Event Category *</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[
-              styles.categoryItem,
-              selectedCategory === cat.id && styles.categoryItemSelected,
-              { borderColor: cat.color }
-            ]}
-            onPress={() => setSelectedCategory(cat.id)}
-          >
-            <Ionicons 
-              name={cat.icon} 
-              size={24} 
-              color={selectedCategory === cat.id ? '#fff' : cat.color} 
-            />
-            <Text style={[
-              styles.categoryText,
-              selectedCategory === cat.id && styles.categoryTextSelected
-            ]}>
-              {cat.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-
-  // Image upload render function
-  const renderImageUpload = () => (
-    <View style={styles.imageSection}>
-      <Text style={styles.label}>Event Image</Text>
-      <Text style={styles.imageSubtitle}>
-        {selectedImage 
-          ? "Custom image selected - will be uploaded to Firebase" 
-          : `Default ${categories.find(c => c.id === selectedCategory)?.name || 'category'} image will be used`
-        }
-      </Text>
-      
-      {(selectedImage || selectedCategory) ? (
-        <View style={styles.imagePreview}>
-          <Image 
-            source={
-              selectedImage 
-                ? { uri: selectedImage }
-                : (selectedCategory ? localCategoryImages[selectedCategory] : null) ||
-                  { uri: 'https://picsum.photos/300/150' }
-            } 
-            style={styles.previewImage}
-            resizeMode="cover"
-          />
-          {selectedImage ? (
-            <TouchableOpacity 
-              style={styles.removeImageButton}
-              onPress={() => setSelectedImage(null)}
-              disabled={imageLoading}
-            >
-              <Ionicons name="close-circle" size={24} color="#FF4757" />
-            </TouchableOpacity>
-          ) : null}
-          {imageLoading ? (
-            <View style={styles.imageLoadingOverlay}>
-              <Text style={styles.imageLoadingText}>Uploading...</Text>
+      {requiresApplication && (
+        <View style={styles.applicationDetailsContainer}>
+          <Text style={styles.sectionTitle}>Application Questions</Text>
+          <Text style={styles.sectionSubtitle}>Create questions to screen volunteers</Text>
+          
+          {applicationQuestions.map((question, index) => (
+            <View key={index} style={styles.questionGroup}>
+              <View style={styles.questionHeader}>
+                <Text style={styles.questionLabel}>Question {index + 1}</Text>
+                {applicationQuestions.length > 1 ? (
+                  <TouchableOpacity
+                    onPress={() => removeApplicationQuestion(index)}
+                    style={styles.removeQuestionButton}
+                  >
+                    <Ionicons name="close-circle" size={20} color="#FF4757" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <TextInput
+                style={styles.questionInput}
+                placeholder="Enter your screening question..."
+                value={question}
+                onChangeText={(value) => updateApplicationQuestion(index, value)}
+                multiline
+              />
             </View>
-          ) : null}
+          ))}
+          
+          <TouchableOpacity style={styles.addQuestionButton} onPress={addApplicationQuestion}>
+            <Ionicons name="add-circle-outline" size={20} color="#4CAF50" />
+            <Text style={styles.addQuestionText}>Add Another Question</Text>
+          </TouchableOpacity>
+
+          <View style={styles.approvalToggle}>
+            <View style={styles.approvalInfo}>
+              <Text style={styles.approvalLabel}>Manual Approval Required</Text>
+              <Text style={styles.approvalDescription}>
+                Review and approve each application manually
+              </Text>
+            </View>
+            <Switch
+              value={requiresApproval}
+              onValueChange={setRequiresApproval}
+              trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+              thumbColor={requiresApproval ? '#FFFFFF' : '#9CA3AF'}
+            />
+          </View>
         </View>
-      ) : null}
-      
-      <TouchableOpacity 
-        style={[styles.imageUploadButton, imageLoading && styles.imageUploadButtonDisabled]} 
-        onPress={selectImage}
-        disabled={imageLoading}
-      >
-        <Ionicons 
-          name={imageLoading ? "cloud-upload" : "cloud-upload-outline"} 
-          size={20} 
-          color={imageLoading ? "#ccc" : "#4CAF50"} 
-        />
-        <Text style={[styles.imageUploadText, imageLoading && styles.imageUploadTextDisabled]}>
-          {imageLoading ? 'Processing...' : selectedImage ? 'Change Image' : 'Upload Custom Image'}
-        </Text>
-      </TouchableOpacity>
+      )}
     </View>
   );
 
   return (
     <KeyboardAvoidingView 
-      style={styles.container}
+      style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => navigation.goBack()}
+          >
             <Ionicons name="arrow-back" size={24} color="#333" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create New Event</Text>
-          <View style={{ width: 24 }} />
+          <Text style={styles.headerTitle}>Create Event</Text>
         </View>
 
         <View style={styles.form}>
-          {/* Event Type Selector */}
-          {renderEventTypeSelector()}
-
-          {/* Event Title */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Event Title *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Beach Cleanup Drive"
-              value={title}
-              onChangeText={setTitle}
-              maxLength={100}
-            />
-          </View>
-
-          {/* Event Description */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Description *</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Describe your event, what volunteers will do, and why it matters..."
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={4}
-              maxLength={500}
-            />
-            <Text style={styles.charCount}>{description.length}/500</Text>
-          </View>
-
-          {/* Category Selector */}
-          {renderCategorySelector()}
-
-          {/* Image Upload Section */}
-          {renderImageUpload()}
-
-          {/* Location */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Location *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Full address or landmark"
-              value={location}
-              onChangeText={setLocation}
-            />
-          </View>
-
-          {/* Date and Time */}
-          <View style={styles.dateTimeRow}>
-            <View style={[styles.inputGroup, styles.dateTimeItem]}>
-              <Text style={styles.label}>Date *</Text>
-              <TouchableOpacity 
-                style={styles.dateTimeButton}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Ionicons name="calendar-outline" size={20} color="#666" />
-                <Text style={styles.dateTimeButtonText}>
-                  {date.toLocaleDateString()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.inputGroup, styles.dateTimeItem]}>
-              <Text style={styles.label}>Time *</Text>
-              <TouchableOpacity 
-                style={styles.dateTimeButton}
-                onPress={() => setShowTimePicker(true)}
-              >
-                <Ionicons name="time-outline" size={20} color="#666" />
-                <Text style={styles.dateTimeButtonText}>
-                  {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Number Fields Row */}
-          <View style={styles.numberRow}>
-            <View style={[styles.inputGroup, styles.numberItem]}>
-              <Text style={styles.label}>Volunteers Needed *</Text>
+          {/* Basic Event Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Event Details</Text>
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Event Title *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="10"
-                value={maxVolunteers}
-                onChangeText={setMaxVolunteers}
-                keyboardType="number-pad"
-                maxLength={3}
+                placeholder="Enter event title"
+                value={title}
+                onChangeText={setTitle}
               />
             </View>
 
-            <View style={[styles.inputGroup, styles.numberItem]}>
-              <Text style={styles.label}>Estimated Hours *</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Description *</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Describe your event..."
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Location *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="4"
-                value={estimatedHours}
-                onChangeText={setEstimatedHours}
-                keyboardType="number-pad"
-                maxLength={2}
+                placeholder="Event location"
+                value={location}
+                onChangeText={setLocation}
               />
+            </View>
+
+            {/* Date and Time */}
+            <View style={styles.dateTimeContainer}>
+              <View style={styles.dateTimeGroup}>
+                <Text style={styles.label}>Date *</Text>
+                <TouchableOpacity
+                  style={styles.dateTimeButton}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Ionicons name="calendar-outline" size={20} color="#666" />
+                  <Text style={styles.dateTimeText}>
+                    {date.toLocaleDateString()}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.dateTimeGroup}>
+                <Text style={styles.label}>Time *</Text>
+                <TouchableOpacity
+                  style={styles.dateTimeButton}
+                  onPress={() => setShowTimePicker(true)}
+                >
+                  <Ionicons name="time-outline" size={20} color="#666" />
+                  <Text style={styles.dateTimeText}>
+                    {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="default"
+                onChange={onDateChange}
+                minimumDate={new Date()}
+              />
+            )}
+
+            {showTimePicker && (
+              <DateTimePicker
+                value={time}
+                mode="time"
+                display="default"
+                onChange={onTimeChange}
+              />
+            )}
+          </View>
+
+          {/* Category Selection */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Category *</Text>
+            <View style={styles.categoriesGrid}>
+              {categories.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.categoryCard,
+                    selectedCategory === cat.id && styles.categoryCardSelected
+                  ]}
+                  onPress={() => setSelectedCategory(cat.id)}
+                >
+                  <View style={[styles.categoryIcon, { backgroundColor: cat.color }]}>
+                    <Ionicons name={cat.icon} size={24} color="#fff" />
+                  </View>
+                  <Text style={styles.categoryName}>{cat.name}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
-          {/* Conditional Sections Based on Event Type */}
-          {eventType === 'application' ? renderApplicationSection() : null}
-          {eventType === 'external' ? renderExternalFormSection() : null}
+          {/* Event Requirements */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Event Requirements</Text>
+            
+            <View style={styles.inputRow}>
+              <View style={styles.inputHalf}>
+                <Text style={styles.label}>Max Volunteers *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="50"
+                  value={maxVolunteers}
+                  onChangeText={setMaxVolunteers}
+                  keyboardType="numeric"
+                />
+              </View>
 
-          {/* Requirements */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Requirements</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Any specific requirements, age restrictions, physical demands, etc."
-              value={requirements}
-              onChangeText={setRequirements}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
+              <View style={styles.inputHalf}>
+                <Text style={styles.label}>Estimated Hours *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="4"
+                  value={estimatedHours}
+                  onChangeText={setEstimatedHours}
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
 
-          {/* Skills */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Skills Needed</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., teamwork, physical fitness, communication (comma-separated)"
-              value={skills}
-              onChangeText={setSkills}
-            />
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Requirements</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Any specific requirements or qualifications..."
+                value={requirements}
+                onChangeText={setRequirements}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Skills Needed</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., teamwork, communication, physical fitness"
+                value={skills}
+                onChangeText={setSkills}
+              />
+            </View>
           </View>
 
           {/* Contact Information */}
-          <View style={styles.sectionHeader}>
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Contact Information</Text>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Contact Email *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="contact@organization.com"
-              value={contactEmail}
-              onChangeText={setContactEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Contact Phone</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+1 (555) 123-4567"
-              value={contactPhone}
-              onChangeText={setContactPhone}
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          {/* Chat Feature Toggle */}
-          <View style={styles.toggleGroup}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.label}>Enable Event Chat</Text>
-              <Text style={styles.toggleDescription}>
-                Create a dedicated chat room for this event. Volunteers can join after registering.
-              </Text>
+            
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Contact Email *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="contact@organization.com"
+                value={contactEmail}
+                onChangeText={setContactEmail}
+                keyboardType="email-address"
+              />
             </View>
-            <Switch
-              value={withChat}
-              onValueChange={setWithChat}
-              trackColor={{ false: '#ccc', true: '#4CAF50' }}
-              thumbColor={withChat ? '#fff' : '#f4f3f4'}
-            />
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Contact Phone</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="+1 (555) 123-4567"
+                value={contactPhone}
+                onChangeText={setContactPhone}
+                keyboardType="phone-pad"
+              />
+            </View>
           </View>
 
-          {/* Recurring Event Toggle */}
-          <View style={styles.toggleGroup}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.label}>Recurring Event</Text>
-              <Text style={styles.toggleDescription}>
-                This event happens regularly (weekly/monthly)
-              </Text>
+          {/* Event Image */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Event Image</Text>
+            <Text style={styles.sectionSubtitle}>
+              Add a custom image or use the default category image
+            </Text>
+            
+            <TouchableOpacity style={styles.imageSelector} onPress={selectImage}>
+              {selectedImage ? (
+                <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
+              ) : (
+                <View style={styles.imagePlaceholder}>
+                  <Ionicons name="camera-outline" size={32} color="#9CA3AF" />
+                  <Text style={styles.imagePlaceholderText}>Tap to select image</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            
+            {selectedImage && (
+              <TouchableOpacity
+                style={styles.removeImageButton}
+                onPress={() => setSelectedImage(null)}
+              >
+                <Text style={styles.removeImageText}>Remove Image</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Application Section - ENHANCED */}
+          {renderApplicationSection()}
+
+          {/* Additional Features */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Additional Features</Text>
+            
+            <View style={styles.featureToggle}>
+              <View style={styles.featureInfo}>
+                <Text style={styles.featureLabel}>Enable Event Chat</Text>
+                <Text style={styles.featureDescription}>
+                  Allow registered volunteers to chat with each other
+                </Text>
+              </View>
+              <Switch
+                value={withChat}
+                onValueChange={setWithChat}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor={withChat ? '#FFFFFF' : '#9CA3AF'}
+              />
             </View>
-            <Switch
-              value={isRecurring}
-              onValueChange={setIsRecurring}
-              trackColor={{ false: '#ccc', true: '#4CAF50' }}
-              thumbColor={isRecurring ? '#fff' : '#f4f3f4'}
-            />
+
+            <View style={styles.featureToggle}>
+              <View style={styles.featureInfo}>
+                <Text style={styles.featureLabel}>Recurring Event</Text>
+                <Text style={styles.featureDescription}>
+                  This event repeats regularly
+                </Text>
+              </View>
+              <Switch
+                value={isRecurring}
+                onValueChange={setIsRecurring}
+                trackColor={{ false: '#E5E7EB', true: '#6366F1' }}
+                thumbColor={isRecurring ? '#FFFFFF' : '#9CA3AF'}
+              />
+            </View>
           </View>
 
           {/* Create Button */}
           <TouchableOpacity
             style={[styles.createButton, loading && styles.createButtonDisabled]}
             onPress={handleCreateEvent}
-            disabled={loading}
+            disabled={loading || imageLoading}
           >
-            <Text style={styles.createButtonText}>
-              {loading ? 'Creating Event...' : 'Create Event'}
-            </Text>
-            {!loading ? <Ionicons name="checkmark-circle" size={20} color="#fff" /> : null}
+            {loading || imageLoading ? (
+              <Text style={styles.createButtonText}>Creating Event...</Text>
+            ) : (
+              <Text style={styles.createButtonText}>Create Event</Text>
+            )}
           </TouchableOpacity>
-
-          <View style={styles.bottomPadding} />
         </View>
-
-        {/* Date/Time Pickers */}
-        {showDatePicker ? (
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display="default"
-            onChange={onDateChange}
-            minimumDate={new Date()}
-          />
-        ) : null}
-
-        {showTimePicker ? (
-          <DateTimePicker
-            value={time}
-            mode="time"
-            display="default"
-            onChange={onTimeChange}
-          />
-        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -865,176 +745,198 @@ export default function CreateEventScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F9FAFB',
   },
   scrollView: {
     flex: 1,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingHorizontal: 20,
-    paddingTop: 50,
     paddingBottom: 20,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: {
+    marginRight: 16,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#2b2b2b',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
   },
   form: {
     padding: 20,
   },
-  
-  // Image Section Styles
-  imageSection: {
+  section: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  inputGroup: {
     marginBottom: 20,
   },
-  imageSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 12,
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 8,
   },
-  imagePreview: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  previewImage: {
-    width: '100%',
-    height: 200,
+  input: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
     borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#FFFFFF',
   },
-  removeImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 12,
-    padding: 4,
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
   },
-  imageUploadButton: {
+  inputRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  inputHalf: {
+    flex: 0.48,
+  },
+  dateTimeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dateTimeGroup: {
+    flex: 0.48,
+  },
+  dateTimeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#4CAF50',
-    borderStyle: 'dashed',
-    backgroundColor: '#f8fff8',
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
   },
-  imageUploadText: {
-    fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: '500',
+  dateTimeText: {
+    fontSize: 16,
+    color: '#374151',
     marginLeft: 8,
   },
-  imageLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  categoriesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  categoryCard: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+  },
+  categoryCardSelected: {
+    borderColor: '#6366F1',
+    backgroundColor: '#F0F9FF',
+  },
+  categoryIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
+    marginBottom: 8,
   },
-  imageLoadingText: {
-    color: '#fff',
+  categoryName: {
     fontSize: 14,
     fontWeight: '500',
+    color: '#374151',
+    textAlign: 'center',
   },
-  imageUploadButtonDisabled: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#ccc',
-  },
-  imageUploadTextDisabled: {
-    color: '#ccc',
-  },
-
-  // Event Type Styles
-  eventTypeSection: {
-    marginBottom: 24,
-    backgroundColor: '#fff',
+  imageSelector: {
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    borderStyle: 'dashed',
     borderRadius: 12,
-    padding: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  eventTypeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    marginBottom: 8,
-    borderRadius: 8,
-  },
-  eventTypeOptionSelected: {
-    backgroundColor: '#f0f8ff',
-  },
-  eventTypeLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  eventTypeIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    height: 200,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    backgroundColor: '#FFFFFF',
   },
-  eventTypeContent: {
+  selectedImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
+  },
+  imagePlaceholderText: {
+    fontSize: 16,
+    color: '#9CA3AF',
+    marginTop: 8,
+  },
+  removeImageButton: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  removeImageText: {
+    fontSize: 14,
+    color: '#EF4444',
+    fontWeight: '500',
+  },
+  // Application Section Styles - ENHANCED
+  applicationSection: {
+    marginBottom: 32,
+  },
+  applicationToggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 16,
+  },
+  applicationToggleInfo: {
     flex: 1,
+    marginRight: 16,
   },
-  eventTypeTitle: {
+  applicationToggleLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2B2B2B',
-    marginBottom: 2,
+    color: '#111827',
+    marginBottom: 4,
   },
-  eventTypeDescription: {
+  applicationToggleDescription: {
     fontSize: 14,
-    color: '#2B2B2B',
+    color: '#6B7280',
   },
-  radioButton: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioButtonSelected: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#4CAF50',
-  },
-
-  // Application Section Styles
-  applicationSection: {
-    marginBottom: 24,
-    backgroundColor: '#fff',
+  applicationDetailsContainer: {
+    backgroundColor: '#FFFFFF',
+    padding: 20,
     borderRadius: 12,
-    padding: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   questionGroup: {
     marginBottom: 16,
@@ -1047,32 +949,32 @@ const styles = StyleSheet.create({
   },
   questionLabel: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#2B2B2B',
+    fontWeight: '500',
+    color: '#374151',
   },
   removeQuestionButton: {
     padding: 4,
   },
   questionInput: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#D1D5DB',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     fontSize: 14,
-    backgroundColor: '#f8f9fa',
-    minHeight: 40,
+    backgroundColor: '#F9FAFB',
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
   addQuestionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#4CAF50',
-    borderStyle: 'dashed',
-    marginBottom: 16,
+    borderRadius: 8,
+    marginBottom: 20,
   },
   addQuestionText: {
     fontSize: 14,
@@ -1084,9 +986,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
+    paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: '#E5E7EB',
   },
   approvalInfo: {
     flex: 1,
@@ -1094,185 +996,54 @@ const styles = StyleSheet.create({
   },
   approvalLabel: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#2B2B2B',
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 4,
   },
   approvalDescription: {
     fontSize: 12,
-    color: '#2b2b2b',
-    marginTop: 2,
+    color: '#6B7280',
   },
-
-  // External Form Section Styles
-  externalFormSection: {
-    marginBottom: 24,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  externalFormNote: {
+  featureToggle: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#FFF8E1',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  externalFormNoteText: {
-    fontSize: 12,
-    color: '#F57C00',
-    marginLeft: 8,
-    flex: 1,
-    lineHeight: 16,
-  },
-
-  // Form Styles
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 20,
     borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
-  },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  charCount: {
-    textAlign: 'right',
-    fontSize: 12,
-    color: '#666',
-    marginTop: 5,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: '#666',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     marginBottom: 16,
   },
-  categorySection: {
-    marginBottom: 20,
-  },
-  categoryScroll: {
-    marginTop: 5,
-  },
-  categoryItem: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginRight: 12,
-    borderRadius: 12,
-    borderWidth: 2,
-    backgroundColor: '#fff',
-    minWidth: 80,
-  },
-  categoryItemSelected: {
-    backgroundColor: '#2B2B2B',
-    borderColor: '#4CAF50',
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  categoryTextSelected: {
-    color: '#fff',
-  },
-  dateTimeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  dateTimeItem: {
+  featureInfo: {
     flex: 1,
-    marginRight: 10,
+    marginRight: 16,
   },
-  dateTimeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-  },
-  dateTimeButtonText: {
+  featureLabel: {
     fontSize: 16,
-    color: '#333',
-    marginLeft: 8,
+    fontWeight: '500',
+    color: '#111827',
+    marginBottom: 4,
   },
-  numberRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  numberItem: {
-    flex: 1,
-    marginRight: 10,
-  },
-  sectionHeader: {
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  toggleGroup: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 30,
-  },
-  toggleInfo: {
-    flex: 1,
-  },
-  toggleDescription: {
+  featureDescription: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+    color: '#6B7280',
   },
   createButton: {
-    backgroundColor: '#4CAF50',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
+    backgroundColor: '#6366F1',
     borderRadius: 12,
-    marginTop: 10,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 40,
   },
   createButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#9CA3AF',
   },
   createButtonText: {
-    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
-    marginRight: 8,
-  },
-  bottomPadding: {
-    height: 20,
+    color: '#FFFFFF',
   },
 });
 
