@@ -155,21 +155,34 @@ export default function EventDetailsScreen({ route, navigation }) {
   // Load organization data
   useEffect(() => {
     const loadOrganization = async () => {
+      // Debug: Log the current user
+      console.log('DEBUG: Current user:', user);
+  
       if (event?.organizationId) {
         try {
-          const orgDoc = await getDoc(doc(db, 'users', event.organizationId));
+          // Debug: Log the organizationId you are trying to fetch
+          console.log('DEBUG: Fetching organization with ID:', event.organizationId);
+  
+          const orgDoc = await getDoc(doc(db, 'organizations', event.organizationId));
+  
+          // Debug: Log the result of the fetch
+          console.log('DEBUG: orgDoc.exists():', orgDoc.exists());
           if (orgDoc.exists()) {
+            console.log('DEBUG: orgDoc.data():', orgDoc.data());
             setOrganization(orgDoc.data());
+          } else {
+            console.log('DEBUG: Organization document does not exist.');
           }
         } catch (error) {
+          // Debug: Log the error and the user
+          console.log('DEBUG: Error loading organization. User:', user);
           console.error('Error loading organization:', error);
         }
       }
     };
-
+  
     loadOrganization();
   }, [event?.organizationId]);
-
   // Set up real-time listener for event updates
   useEffect(() => {
     if (event?.id) {
@@ -191,21 +204,30 @@ export default function EventDetailsScreen({ route, navigation }) {
   }, [event?.id]);
 
   // Load user's application status
+ 
   useEffect(() => {
     const loadUserApplication = async () => {
+      // Debug: Log the current user and event
+      console.log('DEBUG: [Application] Current user:', user);
+      console.log('DEBUG: [Application] Event ID:', event?.id);
+  
       if (!user?.uid || !event?.id || userRole === 'organization') {
+        console.log('DEBUG: [Application] Skipping fetch due to missing user/event or userRole is organization');
         return;
       }
-
+  
       setLoadingApplication(true);
       try {
-        // Check if user has applied to this event
         const applicationsRef = collection(db, 'events', event.id, 'applications');
+        console.log('DEBUG: [Application] Fetching application at path:', `events/${event.id}/applications/${user.uid}`);
         const userApplicationDoc = await getDoc(doc(applicationsRef, user.uid));
-        
+  
+        console.log('DEBUG: [Application] userApplicationDoc.exists():', userApplicationDoc.exists());
         if (userApplicationDoc.exists()) {
+          console.log('DEBUG: [Application] userApplicationDoc.data():', userApplicationDoc.data());
           setUserApplication(userApplicationDoc.data());
         } else {
+          console.log('DEBUG: [Application] Application document does not exist.');
           setUserApplication(null);
         }
       } catch (error) {
@@ -214,10 +236,9 @@ export default function EventDetailsScreen({ route, navigation }) {
         setLoadingApplication(false);
       }
     };
-
+  
     loadUserApplication();
   }, [user?.uid, event?.id, userRole]);
-
   // Handle event application - UPDATED
   const handleApplyToEvent = async () => {
     if (!user) {
@@ -463,15 +484,16 @@ export default function EventDetailsScreen({ route, navigation }) {
           email: user.email,
           photoURL: user.photoURL,
         });
-        
         await ensureChatRoomExists(event.id, event, user.uid, true);
-        
-        navigation.navigate('Chat', {
-          chatRoomId: `event_${event.id}`,
-          chatTitle: `${event.title} - Chat`,
-          isEventChat: true,
-          eventId: event.id,
-          organizationId: event.organizationId,
+        navigation.navigate('Events', {
+          screen: 'Chat',
+          params: {
+            chatRoomId: `event_${event.id}`,
+            chatTitle: `${event.title} - Chat`,
+            isEventChat: true,
+            eventId: event.id,
+            organizationId: event.organizationId,
+          },
         });
         return;
       }
@@ -480,26 +502,23 @@ export default function EventDetailsScreen({ route, navigation }) {
       if (event.requiresApplication) {
         if (!isApproved) {
           Alert.alert(
-            'Approval Required', 
+            'Approval Required',
             'You must be approved for this event to access the chat.',
-            [
-              { text: 'OK', style: 'default' }
-            ]
+            [{ text: 'OK', style: 'default' }]
           );
           return;
         }
-        
         if (!isRegistered) {
           Alert.alert(
-            'Registration Required', 
+            'Registration Required',
             'You must register for this event to access the chat.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Register Now', 
+              {
+                text: 'Register Now',
                 onPress: handleRegister,
-                style: 'default'
-              }
+                style: 'default',
+              },
             ]
           );
           return;
@@ -508,15 +527,15 @@ export default function EventDetailsScreen({ route, navigation }) {
         // For normal events, just check registration
         if (!isRegistered) {
           Alert.alert(
-            'Registration Required', 
+            'Registration Required',
             'You must be registered for this event to access the chat.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Register Now', 
+              {
+                text: 'Register Now',
                 onPress: handleRegister,
-                style: 'default'
-              }
+                style: 'default',
+              },
             ]
           );
           return;
@@ -528,17 +547,17 @@ export default function EventDetailsScreen({ route, navigation }) {
         email: user.email,
         photoURL: user.photoURL,
       });
-      
       await ensureChatRoomExists(event.id, event, user.uid, false);
-
-      navigation.navigate('Chat', {
-        chatRoomId: `event_${event.id}`,
-        chatTitle: `${event?.title} - Chat`,
-        isEventChat: true,
-        eventId: event.id,
-        organizationId: event.organizationId,
+      navigation.navigate('Events', {
+        screen: 'Chat',
+        params: {
+          chatRoomId: `event_${event.id}`,
+          chatTitle: `${event?.title} - Chat`,
+          isEventChat: true,
+          eventId: event.id,
+          organizationId: event.organizationId,
+        },
       });
-
     } catch (error) {
       console.error('Error accessing chat:', error);
       Alert.alert('Chat Access Error', 'Failed to access chat. Please try again.');
