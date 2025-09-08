@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
+import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { getAuth, updateProfile } from 'firebase/auth';
 import {
   collection,
@@ -26,60 +27,71 @@ import {
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';
-import { db } from '../../../firebaseConfig';
+import { db, storage } from '../../../firebaseConfig';
 
 // ProfileAvatar component
 // ProfileAvatar component with cache busting on photoURL
 const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
   const getInitials = (name) => {
-    if (!name) return "V";
+    if (!name) return 'V';
     return name
-      .split(" ")
+      .split(' ')
       .map((word) => word[0])
-      .join("")
+      .join('')
       .toUpperCase()
       .substring(0, 2);
   };
+
   const getAvatarColor = (name) => {
     const colors = [
-      "#4e8cff", "#FF6B6B", "#4ECDC4", "#45B7D1",
-      "#96CEB4", "#FECA57", "#FF9FF3", "#54A0FF",
+      '#4e8cff',
+      '#FF6B6B',
+      '#4ECDC4',
+      '#45B7D1',
+      '#96CEB4',
+      '#FECA57',
+      '#FF9FF3',
+      '#54A0FF',
     ];
     if (!name) return colors[0];
-    const index = name.length % colors.length;
-    return colors[index];
+    return colors[name.length % colors.length];
   };
 
-  // Append a timestamp to bust any image caching by React Native <Image>
   const photoUri = photoURL ? `${photoURL}?t=${Date.now()}` : null;
 
   return (
     <View style={{ width: size, height: size }}>
       {!photoURL ? (
         <View
-          style={[
-            styles.defaultAvatar,
-            {
-              width: size,
-              height: size,
-              borderRadius: size / 2,
-              backgroundColor: getAvatarColor(displayName),
-            },
-          ]}
+          style={{
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: getAvatarColor(displayName),
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
         >
-          <Text style={[styles.avatarText, { fontSize: size * 0.4 }]}>
+          <Text
+            style={{
+              color: 'white',
+              fontSize: size * 0.4,
+              fontWeight: '600',
+            }}
+          >
             {getInitials(displayName)}
           </Text>
         </View>
       ) : (
         <Image
           source={{ uri: photoUri }}
-          style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+          style={{ width: size, height: size, borderRadius: size / 2 }}
           resizeMode="cover"
+          onError={(e) => console.log('Avatar image load error', e.nativeEvent.error)}
         />
       )}
       <TouchableOpacity
-        style={[styles.addIconContainer, { right: size * 0.1, bottom: size * 0.1 }]}
+        style={{ position: 'absolute', right: size * 0.1, bottom: size * 0.1 }}
         onPress={onPressAdd}
       >
         <Ionicons name="add-circle" size={size * 0.25} color="#4CAF50" />
@@ -87,6 +99,8 @@ const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
     </View>
   );
 };
+
+
 
 
 
@@ -182,81 +196,74 @@ export default function ProfileScreen({ navigation }) {
 const CLOUD_FUNCTION_URL = 'https://us-central1-younite-7eb12.cloudfunctions.net/uploadProfileImage';
 
 const handleAddProfileImage = async () => {
-  try {
-    console.log("Requesting media library permissions...");
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert("Permission Denied", "Permission to access media library is required!");
-      console.log("Permission denied.");
-      return;
-    }
-    console.log("Permission granted.");
-
-    console.log("Launching image picker...");
-    const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-
-    if (pickerResult.canceled) {
-      console.log("Image picker canceled.");
-      return;
-    }
-    console.log("Image picked.");
-
-    const imageUri = pickerResult.assets?.[0]?.uri;
-    if (!imageUri) {
-      console.log("No image URI found.");
-      return;
-    }
-    console.log("Image URI:", imageUri);
-
-    console.log("Reading image as base64...");
-    const base64String = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
-    console.log("Base64 length:", base64String.length);
-
-    const auth = getAuth();
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Error", "User not authenticated.");
-      console.log("User not authenticated.");
-      return;
-    }
-    console.log("Authenticated user:", user.uid);
-
-    console.log("Uploading base64 string to Firebase Cloud Function...");
-    const response = await fetch(CLOUD_FUNCTION_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base64: base64String, userId: user.uid }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Cloud Function upload failed');
-    }
-
-    const { downloadURL } = await response.json();
-    console.log("Download URL from Cloud Function:", downloadURL);
-
-    await updateProfile(user, { photoURL: downloadURL });
-    console.log("User profile updated with photoURL.");
-
-    await updateDoc(doc(db, 'users', user.uid), { photoURL: downloadURL });
-    console.log("Firestore user document updated with photoURL.");
-
-    // Update local user state to trigger UI refresh (important)
-    setUser((prevUser) => ({
-      ...prevUser,
-      photoURL: downloadURL,
-    }));
-
-    Alert.alert("Success", "Profile image updated successfully!");
-  } catch (error) {
-    console.error("Upload error:", error);
-    Alert.alert("Error", `Failed to upload profile image. ${error.message || error}`);
-  }
+  try {
+    console.log("Requesting media library permissions...");
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Permission Denied", "Permission to access media library is required!");
+      console.log("Permission denied.");
+      return;
+    }
+    console.log("Permission granted.");
+    console.log("Launching image picker...");
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (pickerResult.canceled) {
+      console.log("Image picker canceled.");
+      return;
+    }
+    console.log("Image picked.");
+    const imageUri = pickerResult.assets?.[0]?.uri;
+    if (!imageUri) {
+      console.log("No image URI found.");
+      return;
+    }
+    console.log("Image URI:", imageUri);
+    console.log("Reading image as base64...");
+    
+    const base64String = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
+    console.log("Base64 length:", base64String.length);
+    const auth = getAuth();
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert("Error", "User not authenticated.");
+      console.log("User not authenticated.");
+      return;
+    }
+    console.log("Authenticated user:", user.uid);
+    console.log("Uploading base64 string to Firebase Cloud Function...");
+    const response = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify({ base64: base64String, userId: user.uid }),
+ });
+    if (!response.ok) {
+      throw new Error('Cloud Function upload failed');
+    }
+    const { downloadURL } = await response.json();
+    console.log("Download URL from Cloud Function:", downloadURL);
+    await updateProfile(user, { photoURL: downloadURL });
+    console.log("User profile updated with photoURL.");
+    await updateDoc(doc(db, 'users', user.uid), { photoURL: downloadURL });
+    console.log("Firestore user document updated with photoURL.");
+    // Update local user state to trigger UI refresh (important)
+    setUser((prevUser) => ({
+      ...prevUser,
+      photoURL: downloadURL,
+    }));
+    Alert.alert("Success", "Profile image updated successfully!");
+  } catch (error) {
+    console.error("Upload error:", error);
+    Alert.alert("Error", `Failed to upload profile image. ${error.message || error}`);
+  }
 };
+
+
+
+
 
 
 
@@ -326,6 +333,15 @@ const handleAddProfileImage = async () => {
               size={80}
               onPressAdd={handleAddProfileImage}
             />
+            {/* <Image
+              source={getImageSource(item)}
+              style={styles.eventImage}
+              onError={({ nativeEvent: { error } }) => {
+                console.log(`❌ Image error for: ${item.title}`);
+                console.log('Image URL:', item.imageUrl);
+                console.log('Error details:', error);
+              }}
+            /> */}
             <Text style={styles.userName}>
               {user?.displayName || user?.email?.split('@')[0] || 'Volunteer'}
             </Text>

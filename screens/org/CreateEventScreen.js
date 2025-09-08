@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { addDoc, arrayUnion, collection, doc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useState } from 'react';
+import * as FileSystem from 'expo-file-system';
 import {
   Alert,
   Image,
@@ -34,6 +35,7 @@ const localCategoryImages = {
   // community: communityImg,
 
 };
+const CLOUD_FUNCTION_URL = 'https://us-central1-younite-7eb12.cloudfunctions.net/uploadProfileImage';  // Use your actual Cloud Function URL here
 
 export default function CreateEventScreen({ navigation }) {
   const { user } = useAppContext();
@@ -84,22 +86,19 @@ export default function CreateEventScreen({ navigation }) {
   ];
 
   // Image selection function
-  const selectImage = async () => {
+const selectImage = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
       if (status !== 'granted') {
         Alert.alert('Permission needed', 'Please grant photo library permissions to upload an image.');
         return;
       }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [16, 9],
         quality: 0.7,
       });
-
       if (!result.canceled) {
         setSelectedImage(result.assets[0].uri);
       }
@@ -109,38 +108,46 @@ export default function CreateEventScreen({ navigation }) {
     }
   };
 
+
+
   // Upload image to Firebase Storage
-  const uploadImageToFirebase = async (imageUri) => {
-    try {
-      setImageLoading(true);
-      
-      // Convert image to blob
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
-      
-      // Create unique filename
-      const filename = `event-images/${user.uid}/${Date.now()}.jpg`;
-      
-      // Create storage reference
-      const imageRef = ref(storage, filename);
-      
-      // Upload the blob
-      const snapshot = await uploadBytes(imageRef, blob);
-      
-      // Get download URL
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      
-      console.log('Image uploaded successfully:', downloadURL);
-      return downloadURL;
-      
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      Alert.alert('Error', 'Failed to upload image. Please try again.');
-      throw error;
-    } finally {
-      setImageLoading(false);
-    }
-  };
+const uploadImageToFirebase = async (imageUri) => {
+  try {
+    setImageLoading(true);
+    const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' });
+    const response = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64, userId: user.uid }),
+    });
+    if (!response.ok) throw new Error('Upload failed');
+    const { downloadURL } = await response.json();
+    console.log('Received signed URL:', downloadURL);
+    return downloadURL;
+  } catch (error) {
+    console.error(error);
+    Alert.alert('Error', 'Image upload failed');
+    throw error;
+  } finally {
+    setImageLoading(false);
+  }
+};
+
+async function uploadImage(uri) {
+  const filename = `profileImages/${user.uid}/${Date.now()}.jpg`;
+  const reference = storage().ref(filename);
+
+  // Upload file from local URI
+  await reference.putFile(uri);
+
+  // After upload, get the secure download URL
+  const downloadURL = await reference.getDownloadURL();
+  console.log('File available at:', downloadURL);
+
+  return downloadURL;
+}
+// Save the returned
+
 
   const validateForm = () => {
     if (!title.trim()) {
@@ -193,43 +200,32 @@ export default function CreateEventScreen({ navigation }) {
   };
 
   // Handle event creation with proper image logic
-  const handleCreateEvent = async () => {
+ const handleCreateEvent = async () => {
     if (!validateForm()) return;
-
     setLoading(true);
     try {
-      // Combine date and time
       const eventDateTime = new Date(date);
       eventDateTime.setHours(time.getHours(), time.getMinutes());
 
-      // Handle image logic
       let imageUrl = null;
       let hasCustomImage = false;
       let useLocalDefault = true;
-      
+
       if (selectedImage) {
         try {
-          // Upload custom image to Firebase Storage
           imageUrl = await uploadImageToFirebase(selectedImage);
           hasCustomImage = true;
           useLocalDefault = false;
-          console.log('Custom image uploaded:', imageUrl);
         } catch (uploadError) {
           console.error('Image upload failed:', uploadError);
-          // If upload fails, fall back to local default
           hasCustomImage = false;
           useLocalDefault = true;
           Alert.alert(
-            'Image Upload Failed', 
+            'Image Upload Failed',
             'Your event will be created with a default category image.',
             [{ text: 'Continue', style: 'default' }]
           );
         }
-      } else {
-        // No custom image selected - use local default
-        hasCustomImage = false;
-        useLocalDefault = true;
-        imageUrl = null; // Don't store anything in Firebase for local images
       }
 
       const eventData = {
@@ -241,71 +237,48 @@ export default function CreateEventScreen({ navigation }) {
         maxVolunteers: parseInt(maxVolunteers),
         estimatedHours: parseInt(estimatedHours),
         requirements: requirements.trim(),
-        skills: skills.trim().split(',').map(skill => skill.trim()).filter(skill => skill),
+        skills: skills.trim().split(',').map(s => s.trim()).filter(s => s),
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim(),
         isRecurring,
-        participantsCount: 0,  
-        
-        // Chat feature
-        withChat: withChat,
-        
-        // Application feature - ENHANCED
-        requiresApplication: requiresApplication,
-        
-        // Application-specific fields (only if application is required)
+        participantsCount: 0,
+        withChat,
+        requiresApplication,
         ...(requiresApplication && {
           applicationQuestions: applicationQuestions.filter(q => q.trim()),
-          requiresApproval: requiresApproval,
+          requiresApproval,
           applicants: [],
           approvedApplicants: [],
           rejectedApplicants: [],
           pendingApplications: [],
         }),
-        
-        // Organization data
         organizationId: user.uid,
         organizationName: user.displayName || 'Organization',
-        
-        // Event status
         status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),
-        
-        // Volunteer tracking - UPDATED for application system
-        registeredVolunteers: requiresApplication ? [] : [], // Always start empty
+        registeredVolunteers: requiresApplication ? [] : [],
         confirmedVolunteers: [],
         completedVolunteers: [],
-        
-        // Engagement metrics
         views: 0,
         applications: 0,
-        
-        // Image data - UPDATED LOGIC
-        imageUrl: hasCustomImage ? imageUrl : null, // Only store Firebase URL if custom
-        hasCustomImage: hasCustomImage,
-        useLocalDefault: useLocalDefault, // Flag to use local image
-        tags: skills.trim().split(',').map(skill => skill.trim()).filter(skill => skill),
+        imageUrl: hasCustomImage ? imageUrl : null,
+        hasCustomImage,
+        useLocalDefault,
+        tags: skills.trim().split(',').map(s => s.trim()).filter(s => s),
       };
 
-      console.log('Creating event:', eventData);
+      console.log('Creating event with data:', eventData);
 
-      // Add event to events collection
       const eventRef = await addDoc(collection(db, 'events'), eventData);
       console.log('Event created with ID:', eventRef.id);
 
-      // Update organization's events array
-      try {
-        await updateDoc(doc(db, 'organizations', user.uid), {
-          events: arrayUnion(eventRef.id),
-          updatedAt: new Date(),
-        });
-        console.log('Organization events updated');
-      } catch (orgError) {
-        console.error('Failed to update organization events:', orgError);
-      }
+      await updateDoc(doc(db, 'organizations', user.uid), {
+        events: arrayUnion(eventRef.id),
+        updatedAt: new Date(),
+      });
 
-      const successMessage = requiresApplication 
+      const successMessage = requiresApplication
         ? 'Your event has been created successfully! Volunteers will need to apply and wait for approval before joining.'
         : `Your event has been created successfully!${withChat ? ' Event chat will be available once volunteers register.' : ''}`;
 
@@ -318,15 +291,14 @@ export default function CreateEventScreen({ navigation }) {
             onPress: () => {
               navigation.goBack();
               navigation.navigate('Events');
-            }
+            },
           },
           {
             text: 'Create Another',
-            onPress: () => resetForm()
-          }
+            onPress: () => resetForm(),
+          },
         ]
       );
-
     } catch (error) {
       console.error('Error creating event:', error);
       Alert.alert('Error', 'Failed to create event. Please try again.');
@@ -334,6 +306,7 @@ export default function CreateEventScreen({ navigation }) {
       setLoading(false);
     }
   };
+
 
   const resetForm = () => {
     setTitle('');

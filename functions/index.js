@@ -1,8 +1,10 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { v4: uuidv4 } = require("uuid");
+
 admin.initializeApp();
-const Buffer = require('buffer').Buffer;
+const Buffer = require("buffer").Buffer;
+
 exports.uploadProfileImage = functions.https.onRequest(async (req, res) => {
   try {
     const { base64, userId } = req.body;
@@ -15,14 +17,23 @@ exports.uploadProfileImage = functions.https.onRequest(async (req, res) => {
     const filename = `profileImages/${userId}-${uuidv4()}.jpg`;
     const file = bucket.file(filename);
 
+    // Generate a UUID token for Firebase download link
+    const token = uuidv4();
+
     await file.save(buffer, {
-      metadata: { contentType: "image/jpeg" }
+      metadata: {
+        contentType: "image/jpeg",
+        metadata: {
+          firebaseStorageDownloadTokens: token,
+        },
+      },
     });
 
-    // Make public or create a signed URL (example: public URL)
-    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filename}`;
+    // Construct Firebase download URL manually
+    const bucketName = bucket.name;
+    const downloadURL = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filename)}?alt=media&token=${token}`;
 
-    res.status(200).json({ downloadURL: publicUrl });
+    res.status(200).json({ downloadURL });
   } catch (error) {
     console.error("Upload error:", error);
     res.status(500).send("Upload failed");

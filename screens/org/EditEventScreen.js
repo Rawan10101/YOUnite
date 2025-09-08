@@ -3,21 +3,22 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppContext } from '../../../contexts/AppContext';
-import { db } from '../../../firebaseConfig';
+import { useAppContext } from '../../contexts/AppContext';
+import { db } from '../../firebaseConfig';
+
 export default function EditEventScreen({ route, navigation }) {
   const { eventId } = route.params;
   const { user } = useAppContext();

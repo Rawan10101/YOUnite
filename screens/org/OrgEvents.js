@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,11 +26,66 @@ import educationImg from '../../assets/images/educationCat.jpeg';
 import environmentImg from '../../assets/images/environmentCat.jpeg';
 import healthcareImg from '../../assets/images/healthcareCat.jpeg';
 // import communityImg from '../../assets/images/communityCat.jpeg';
+const localCategoryImages = {
+  environment: environmentImg,
+  education: educationImg,
+  healthcare: healthcareImg,
+};
 
 const { width: screenWidth } = Dimensions.get('window');
 
+
+const handleRefresh = () => {
+  setRefreshing(true);
+  // Re-trigger the snapshot listener by refetching data or simply reset the listener
+  const fetchData = async () => {
+    if (!user?.uid) return;
+
+    const eventsQuery = query(
+      collection(db, 'events'),
+      where('organizationId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    try {
+      const querySnapshot = await getDocs(eventsQuery);
+      const freshEvents = [];
+
+      for (const docSnap of querySnapshot.docs) {
+        const eventData = docSnap.data();
+        let imageUrl = eventData.imageUrl;
+        // If the imageUrl is a storage path (not full URL), get download URL
+        if (eventData.hasOwnProperty('hasCustomImage') && eventData.hasCustomImage && imageUrl && !imageUrl.startsWith('http')) {
+          try {
+            imageUrl = await getDownloadURL(ref(storage, imageUrl));
+          } catch (e) {
+            imageUrl = null;
+          }
+        }
+
+        freshEvents.push({
+          id: docSnap.id,
+          ...eventData,
+          imageUrl,
+          date: eventData.date?.toDate() || new Date(eventData.date),
+        });
+      }
+
+      setEvents(freshEvents);
+      filterEvents();
+    } catch (error) {
+      console.error("Error refreshing events:", error);
+      setError("Failed to refresh events.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  fetchData();
+};
+
 // Local category images mapping
-const localCategoryImages = {
+const localImages = {
   environment: environmentImg,
   education: educationImg,
   healthcare: healthcareImg,
@@ -41,37 +97,6 @@ const localCategoryImages = {
   // technology: technologyImg,
 };
 
-// Function to get the correct image source based on event data
-const getImageSource = (event) => {
-  // If has custom image uploaded to Firebase
-  if (event.hasCustomImage && event.imageUrl) {
-    return { uri: event.imageUrl };
-  }
-  
-  // Use local default based on category
-  if (event.category && localCategoryImages[event.category]) {
-    return localCategoryImages[event.category];
-  }
-  
-  // Fallback to a default local image
-  return localCategoryImages.community;
-};
-
-const sanitizeData = (data) => {
-  const cleanData = {};
-  for (const key in data) {
-    if (data[key] === undefined) {
-      continue;
-    } else if (data[key] === null || data[key] === '') {
-      cleanData[key] = null;
-    } else if (typeof data[key] === 'object' && data[key] !== null && !Array.isArray(data[key])) {
-      cleanData[key] = sanitizeData(data[key]);
-    } else {
-      cleanData[key] = data[key];
-    }
-  }
-  return cleanData;
-};
 
 export default function OrganizationEvents({ navigation }) {
   const { user } = useAppContext();
@@ -83,19 +108,23 @@ export default function OrganizationEvents({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (user?.uid) {
-      const cleanup = setupRealtimeListener();
-      return cleanup;
+  // Helper: fetch Firebase Storage download URL if needed
+  const fetchStorageDownloadURL = async (event) => {
+    if (event.hasCustomImage && event.imageUrl && !event.imageUrl.startsWith('http')) {
+      try {
+        const imageRef = ref(storage, event.imageUrl);
+        const url = await getDownloadURL(imageRef);
+        return url;
+      } catch (e) {
+        console.error('Error loading image URL from storage path:', e);
+        return null;
+      }
     }
-  }, [user]);
+    return event.imageUrl || null;
+  };
 
   useEffect(() => {
-    filterEvents();
-  }, [events, activeTab, searchQuery]);
-
-  const setupRealtimeListener = () => {
-    if (!user?.uid) return () => {};
+    if (!user?.uid) return;
 
     const eventsQuery = query(
       collection(db, 'events'),
@@ -105,72 +134,87 @@ export default function OrganizationEvents({ navigation }) {
 
     const unsubscribe = onSnapshot(
       eventsQuery,
-      (snapshot) => {
+      async (snapshot) => {
         const eventsData = [];
-        snapshot.forEach((doc) => {
-          const eventData = doc.data();
+
+        for (const docSnap of snapshot.docs) {
+          const eventData = docSnap.data();
+
+          // Fetch real downloadURL if stored as path
+          const imageUrl = await fetchStorageDownloadURL(eventData);
+
           eventsData.push({
-            id: doc.id,
+            id: docSnap.id,
             ...eventData,
-            date: eventData.date?.toDate ? eventData.date.toDate() : (eventData.date ? new Date(eventData.date) : null),
+            imageUrl,
+            date: eventData.date?.toDate ? eventData.date.toDate() : new Date(eventData.date),
           });
-        });
+        }
+
         setEvents(eventsData);
         setLoading(false);
         setError(null);
       },
-      (error) => {
-        console.error('Error fetching events:', error);
+      (err) => {
+        console.error('Error fetching events:', err);
         setError('Failed to load events');
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
-  };
+  }, [user?.uid]);
+
+  useEffect(() => {
+    filterEvents();
+  }, [events, activeTab, searchQuery]);
 
   const filterEvents = () => {
     let filtered = events;
 
-    // Filter by status
     if (activeTab !== 'all') {
-      filtered = filtered.filter(event => event.status === activeTab);
+      filtered = filtered.filter((event) => event.status === activeTab);
     }
 
-    // Filter by search query - add null checks
     if (searchQuery.trim()) {
-      filtered = filtered.filter(event =>
-        (event.title && event.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (event.category && event.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (event.location && event.location.toLowerCase().includes(searchQuery.toLowerCase()))
+      filtered = filtered.filter(
+        (event) =>
+          (event.title && event.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
+          (event.category && event.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
+          (event.location && event.location.toLowerCase().includes(searchQuery.toLowerCase()))
       );
     }
 
     setFilteredEvents(filtered);
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  };
-
   const getStatusColor = (status) => {
     switch (status) {
-      case 'active': return '#4CAF50';
-      case 'draft': return '#FF9800';
-      case 'completed': return '#666';
-      case 'cancelled': return '#F44336';
-      default: return '#666';
+      case 'active':
+        return '#4CAF50';
+      case 'draft':
+        return '#FF9800';
+      case 'completed':
+        return '#666';
+      case 'cancelled':
+        return '#F44336';
+      default:
+        return '#666';
     }
   };
 
   const getStatusText = (status) => {
     switch (status) {
-      case 'active': return 'Published';
-      case 'draft': return 'Draft';
-      case 'completed': return 'Completed';
-      case 'cancelled': return 'Cancelled';
-      default: return status;
+      case 'active':
+        return 'Published';
+      case 'draft':
+        return 'Draft';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return status;
     }
   };
 
@@ -185,7 +229,6 @@ export default function OrganizationEvents({ navigation }) {
   };
 
   const handleCreateEvent = () => {
-    console.log('Navigate to CreateEvent');
     navigation.navigate('CreateEvent');
   };
 
@@ -218,13 +261,12 @@ export default function OrganizationEvents({ navigation }) {
 
   const handleToggleEventStatus = async (event) => {
     const newStatus = event.status === 'active' ? 'draft' : 'active';
-    
+
     try {
       await updateDoc(doc(db, 'events', event.id), {
         status: newStatus,
         updatedAt: new Date(),
       });
-      
       Alert.alert(
         'Status Updated',
         `Event ${newStatus === 'active' ? 'published' : 'unpublished'} successfully`
@@ -235,7 +277,6 @@ export default function OrganizationEvents({ navigation }) {
     }
   };
 
-  // NEW: Handle viewing participants
   const handleViewParticipants = (event) => {
     navigation.navigate('EventParticipants', { event });
   };
@@ -245,7 +286,7 @@ export default function OrganizationEvents({ navigation }) {
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
     });
   };
 
@@ -258,12 +299,22 @@ export default function OrganizationEvents({ navigation }) {
     return diffDays;
   };
 
+const getImageSource = (event) => {
+  if (event.hasCustomImage && event.imageUrl) {
+    return { uri: event.imageUrl };
+  }
+
+  if (event?.category && localCategoryImages[event.category]) {
+    return localCategoryImages[event.category];
+  }
+
+  return localCategoryImages.environment;
+}; 
   const renderEventCard = ({ item, index }) => {
     const progress = getEventProgress(item);
     const daysUntil = getDaysUntilEvent(item.date);
     const isUpcoming = daysUntil > 0;
     const isToday = daysUntil === 0;
-    const isPast = daysUntil < 0;
     const participantCount = item.registeredVolunteers?.length || 0;
 
     return (
@@ -274,33 +325,29 @@ export default function OrganizationEvents({ navigation }) {
         style={styles.eventCard}
       >
         <TouchableOpacity onPress={() => handleEventPress(item)}>
-          {/* Event Image with Overlay */}
           <View style={styles.eventImageContainer}>
-            <Image 
-              source={getImageSource(item)} 
-              style={styles.eventImage}
-              resizeMode="cover"
-              onLoad={() => {
-                console.log('✅ Image loaded for:', item.title);
-              }}
-              onError={(error) => {
-                console.log('❌ Image error for:', item.title);
-              }}
-            />
-            <View style={styles.eventImageOverlay} />
-            
-            {/* Status Badge */}
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+<Image
+  source={getImageSource(item)}
+  style={styles.eventImage}
+  onError={({ nativeEvent: { error } }) => {
+    console.log(`❌ Image error for: ${item.title}`);
+    console.log('Image URL:', item.imageUrl);
+    console.log('Error details:', error);
+  }}
+/>
+      <View style={styles.eventImageOverlay} />
+
+            <View
+              style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}
+            >
               <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
             </View>
 
-            {/* Participant Count Badge */}
             <View style={styles.participantBadge}>
               <Ionicons name="people" size={12} color="#fff" />
               <Text style={styles.participantBadgeText}>{participantCount}</Text>
             </View>
 
-            {/* Urgency Indicator */}
             {isUpcoming && daysUntil <= 7 ? (
               <View style={styles.urgencyBadge}>
                 <Ionicons name="time" size={12} color="#fff" />
@@ -317,21 +364,21 @@ export default function OrganizationEvents({ navigation }) {
               </View>
             ) : null}
           </View>
-          
+
           <View style={styles.eventContent}>
-            {/* Event Header with Title */}
             <View style={styles.eventHeader}>
               <Text style={styles.eventTitle} numberOfLines={2}>
                 {item.title}
               </Text>
               <View style={styles.categoryBadge}>
                 <Text style={styles.categoryText}>
-                  {item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : 'General'}
+                  {item.category
+                    ? item.category.charAt(0).toUpperCase() + item.category.slice(1)
+                    : 'General'}
                 </Text>
               </View>
             </View>
 
-            {/* Event Details */}
             <View style={styles.eventDetails}>
               <View style={styles.eventDetailRow}>
                 <Ionicons name="calendar-outline" size={16} color="#666" />
@@ -339,14 +386,14 @@ export default function OrganizationEvents({ navigation }) {
                   {formatDate(item.date)} at {item.time || 'TBD'}
                 </Text>
               </View>
-              
+
               <View style={styles.eventDetailRow}>
                 <Ionicons name="location-outline" size={16} color="#666" />
                 <Text style={styles.eventDetailText} numberOfLines={1}>
                   {item.location || 'Location TBD'}
                 </Text>
               </View>
-              
+
               <View style={styles.eventDetailRow}>
                 <Ionicons name="people-outline" size={16} color="#666" />
                 <Text style={styles.eventDetailText}>
@@ -355,27 +402,23 @@ export default function OrganizationEvents({ navigation }) {
               </View>
             </View>
 
-            {/* Progress Bar */}
             <View style={styles.progressContainer}>
               <View style={styles.progressBar}>
                 <View
                   style={[
                     styles.progressFill,
-                    { 
+                    {
                       width: `${Math.min(progress, 100)}%`,
-                      backgroundColor: progress >= 100 ? '#4CAF50' : '#4e8cff'
+                      backgroundColor: progress >= 100 ? '#4CAF50' : '#4e8cff',
                     },
                   ]}
                 />
               </View>
-              <Text style={styles.progressText}>
-                {Math.round(progress)}% filled
-              </Text>
+              <Text style={styles.progressText}>{Math.round(progress)}% filled</Text>
             </View>
           </View>
         </TouchableOpacity>
 
-        {/* Action Buttons */}
         <View style={styles.eventActions}>
           <TouchableOpacity
             style={[styles.actionButton, styles.editButton]}
@@ -384,8 +427,7 @@ export default function OrganizationEvents({ navigation }) {
             <Ionicons name="create-outline" size={16} color="#4e8cff" />
             <Text style={[styles.actionButtonText, { color: '#4e8cff' }]}>Edit</Text>
           </TouchableOpacity>
-          
-          {/* NEW: Participants Button */}
+
           <TouchableOpacity
             style={[styles.actionButton, styles.participantsButton]}
             onPress={() => handleViewParticipants(item)}
@@ -395,21 +437,21 @@ export default function OrganizationEvents({ navigation }) {
               Participants ({participantCount})
             </Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             style={[styles.actionButton, styles.statusButton]}
             onPress={() => handleToggleEventStatus(item)}
           >
-            <Ionicons 
-              name={item.status === 'active' ? 'pause-outline' : 'play-outline'} 
-              size={16} 
-              color="#FF9800" 
+            <Ionicons
+              name={item.status === 'active' ? 'pause-outline' : 'play-outline'}
+              size={16}
+              color="#FF9800"
             />
             <Text style={[styles.actionButtonText, { color: '#FF9800' }]}>
               {item.status === 'active' ? 'Unpublish' : 'Publish'}
             </Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             style={[styles.actionButton, styles.analyticsButton]}
             onPress={() => navigation.navigate('EventAnalytics', { eventId: item.id })}
@@ -447,14 +489,12 @@ export default function OrganizationEvents({ navigation }) {
     </TouchableOpacity>
   );
 
-  const getTabCounts = () => {
-    return {
-      all: events.length,
-      active: events.filter(e => e.status === 'active').length,
-      draft: events.filter(e => e.status === 'draft').length,
-      completed: events.filter(e => e.status === 'completed').length,
-    };
-  };
+  const getTabCounts = () => ({
+    all: events.length,
+    active: events.filter((e) => e.status === 'active').length,
+    draft: events.filter((e) => e.status === 'draft').length,
+    completed: events.filter((e) => e.status === 'completed').length,
+  });
 
   if (loading) {
     return (
@@ -499,15 +539,12 @@ export default function OrganizationEvents({ navigation }) {
               </TouchableOpacity>
             ) : null}
           </View>
-          
-          {/* Add Button beside search bar */}
           <TouchableOpacity style={styles.addButton} onPress={handleCreateEvent}>
             <Ionicons name="add" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContent}>
           {renderTabButton('all', 'All Events', tabCounts.all)}
@@ -517,7 +554,6 @@ export default function OrganizationEvents({ navigation }) {
         </ScrollView>
       </View>
 
-      {/* Events List */}
       <FlatList
         data={filteredEvents}
         renderItem={renderEventCard}
@@ -529,21 +565,20 @@ export default function OrganizationEvents({ navigation }) {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons 
-              name={searchQuery ? "search-outline" : "calendar-outline"} 
-              size={64} 
-              color="#ccc" 
+            <Ionicons
+              name={searchQuery ? 'search-outline' : 'calendar-outline'}
+              size={64}
+              color="#ccc"
             />
             <Text style={styles.emptyTitle}>
               {searchQuery ? 'No Events Found' : 'No Events Yet'}
             </Text>
             <Text style={styles.emptySubtitle}>
-              {searchQuery 
+              {searchQuery
                 ? `No events match "${searchQuery}"`
-                : activeTab === 'all' 
-                  ? 'Create your first event to get started'
-                  : `No ${activeTab} events at the moment`
-              }
+                : activeTab === 'all'
+                ? 'Create your first event to get started'
+                : `No ${activeTab} events at the moment`}
             </Text>
             {!searchQuery && activeTab === 'all' ? (
               <TouchableOpacity style={styles.emptyButton} onPress={handleCreateEvent}>
@@ -556,6 +591,9 @@ export default function OrganizationEvents({ navigation }) {
     </View>
   );
 }
+
+// Add your styles below as needed
+
 
 const styles = StyleSheet.create({
   container: {

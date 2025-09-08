@@ -45,16 +45,18 @@ const localCategoryImages = {
 // Function to get the correct image source based on event data
 const getImageSource = (event) => {
   if (event.hasCustomImage && event.imageUrl) {
-    return { uri: event.imageUrl };
+    return { uri: event.imageUrl };  // Show uploaded image
   }
   
-  // Use local default based on category
+  // Fallback to local default image based on category
   if (event?.category && localCategoryImages[event.category]) {
     return localCategoryImages[event.category];
   }
   
+  // Final fallback default image
   return localCategoryImages.environment;
 };
+
 
 // Helper function to ensure user document exists
 const ensureUserDocumentExists = async (userId, userData = {}) => {
@@ -84,6 +86,17 @@ const ensureUserDocumentExists = async (userId, userData = {}) => {
     console.error('Error ensuring user document exists:', error);
     throw new Error(`Failed to create user document: ${error.message}`);
   }
+};
+const getEventImageSource = (event) => {
+  if (event.hasOwnProperty('hasCustomImage') && event.hasCustomImage && event.imageUrl) {
+    return { uri: event.imageUrl };
+  }
+
+  if (event.category && localCategoryImages[event.category]) {
+    return localCategoryImages[event.category];
+  }
+
+  return localCategoryImages['environment'];  // default fallback
 };
 
 // Helper function to ensure chat room exists
@@ -184,24 +197,21 @@ export default function EventDetailsScreen({ route, navigation }) {
     loadOrganization();
   }, [event?.organizationId]);
   // Set up real-time listener for event updates
-  useEffect(() => {
-    if (event?.id) {
-      const unsubscribe = onSnapshot(
-        doc(db, 'events', event.id),
-        (doc) => {
-          if (doc.exists()) {
-            const updatedEvent = { id: doc.id, ...doc.data() };
-            setEvent(updatedEvent);
-          }
-        },
-        (error) => {
-          console.error('Event listener error:', error);
-        }
-      );
+useEffect(() => {
+  if (event?.id) {
+    const unsubscribe = onSnapshot(doc(db, 'events', event.id), (doc) => {
+      if (doc.exists()) {
+        console.log('Updated event from Firestore:', doc.data());
+        setEvent({ id: doc.id, ...doc.data() });
+      }
+    }, (error) => {
+      console.error('Firestore event listener error:', error);
+    });
 
-      return () => unsubscribe();
-    }
-  }, [event?.id]);
+    return () => unsubscribe();
+  }
+}, [event?.id]);
+
 
   // Load user's application status
  
@@ -816,7 +826,17 @@ export default function EventDetailsScreen({ route, navigation }) {
     <ScrollView style={styles.container}>
       {/* Header Image */}
       <View style={styles.imageContainer}>
-        <Image source={getImageSource(event)} style={styles.eventImage} />
+<Image
+  source={getImageSource(event)}
+  style={styles.eventImage}
+  onError={({ nativeEvent: { error } }) => {
+    console.log(`❌ Image error for: ${event.title}`);
+    console.log('Image URL:', event.imageUrl);
+    console.log('Error details:', error);
+  }}
+/>
+
+
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}

@@ -1,18 +1,4 @@
-import React, { useEffect, useState } from "react";
-import {
-  Alert,
-  FlatList,
-  Image,
-  Linking,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as Animatable from "react-native-animatable";
 import {
   arrayRemove,
   arrayUnion,
@@ -23,12 +9,25 @@ import {
   onSnapshot,
   orderBy,
   query,
+  setDoc,
   updateDoc,
   where,
-  setDoc,
 } from "firebase/firestore";
-import { db } from "../../firebaseConfig";
-import { useAppContext } from "../../contexts/AppContext";
+import { useEffect, useState } from "react";
+import {
+  Alert,
+  FlatList,
+  Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from "react-native";
+import * as Animatable from "react-native-animatable";
+import { useAppContext } from "../../../contexts/AppContext";
+import { db } from "../../../firebaseConfig";
 
 const EMERALD = "#476397ff";
 

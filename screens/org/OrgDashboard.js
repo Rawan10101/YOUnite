@@ -30,6 +30,28 @@ const screenWidth = Dimensions.get("window").width;
 const CARD_GAP = 9;
 const CARD_WIDTH = (screenWidth - 3 * CARD_GAP) / 2;
 
+import educationImg from '../../assets/images/educationCat.jpeg';
+import environmentImg from '../../assets/images/environmentCat.jpeg';
+import healthcareImg from '../../assets/images/healthcareCat.jpeg';
+// import communityImg from '../../assets/images/communityCat.jpeg';
+const localCategoryImages = {
+  environment: environmentImg,
+  education: educationImg,
+  healthcare: healthcareImg,
+};
+
+const getImageSource = (event) => {
+  if (event.hasCustomImage && event.imageUrl) {
+    return { uri: event.imageUrl };
+  }
+
+  if (event?.category && localCategoryImages[event.category]) {
+    return localCategoryImages[event.category];
+  }
+
+  return localCategoryImages.environment;
+}; 
+
 export default function Feed({ navigation }) {
   const [popularEvents, setPopularEvents] = useState([]);
   const [posts, setPosts] = useState([]);
@@ -227,10 +249,15 @@ const renderEvent = ({ item, index }) => (
       activeOpacity={0.9}
     >
       {/* Sharp rectangular event image */}
-      <Image
-        source={{ uri: item.coverImage || 'https://via.placeholder.com/400x180.png?text=Event' }}
-        style={styles.eventImage}
-      />
+<Image
+  source={getImageSource(item)}
+  style={styles.eventImage}
+  onError={({ nativeEvent: { error } }) => {
+    console.log(`❌ Image error for: ${item.title}`);
+    console.log('Image URL:', item.imageUrl);
+    console.log('Error details:', error);
+  }}
+/>
       {/* Divider */}
       <View style={styles.cardDivider} />
       <View style={styles.eventContent}>
@@ -365,10 +392,6 @@ const renderOrganization = ({ item }) => (
     </View>
   )}
 </View>
-
-
-
-
       <ScrollView keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {
         setRefreshing(true);
         setLoading(true);

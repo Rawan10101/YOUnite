@@ -18,6 +18,7 @@ import ChatMainScreen from './screens/MainTabs/ChatScreen/ChatMainScreen';
 import DiscoverScreen from './screens/MainTabs/DiscoverScreen/DiscoverScreen';
 import EventDetailsScreen from './screens/MainTabs/EventsScreen/EventDetailsScreen';
 import EventsScreen from './screens/MainTabs/EventsScreen/EventsScreen';
+import OrganizationDetailsScreen from './screens/MainTabs/EventsScreen/OrganizationDetailsScreen';
 import ChatScreen from './screens/MainTabs/FeedScreen/ChatScreen';
 import CommentsScreen from './screens/MainTabs/FeedScreen/CommentsScreen';
 import CreateReportScreen from './screens/MainTabs/FeedScreen/CreateReportScreen';
@@ -26,13 +27,12 @@ import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScree
 import ProfileDetailsScreen from './screens/MainTabs/ProfileScreen/ProfileDetailsScreen';
 import ProfileScreen from './screens/MainTabs/ProfileScreen/ProfileScreen';
 import SettingsScreen from './screens/MainTabs/ProfileScreen/SettingsScreen';
-import OrganizationDetailsScreen from './screens/org/OrganizationDetailsScreen';
 import ReportsScreen from './screens/org/ReportsScreen';
 import VolunteerApplicationsScreen from './screens/org/VolunteerApplicationsScreen';
 
-import EditEventScreen from './screens/MainTabs/EventsScreen/EditEventScreen';
 import CreateEventScreen from './screens/org/CreateEventScreen';
 import CreatePostScreen from './screens/org/CreatePostScreen';
+import EditEventScreen from './screens/org/EditEventScreen';
 import OrganizationDashboard from './screens/org/OrgDashboard';
 import OrganizationEvents from './screens/org/OrgEvents';
 import VoluntOrgScreen from './screens/org/VoluntOrgScreen';
