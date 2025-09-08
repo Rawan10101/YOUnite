@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
+import { getAuth, updateProfile } from 'firebase/auth';
 import {
   collection,
   doc,
@@ -8,12 +10,9 @@ import {
   onSnapshot,
   orderBy,
   query,
-  where,
-  updateDoc
+  updateDoc,
+  where
 } from 'firebase/firestore';
-import * as ImagePicker from 'expo-image-picker';
-import { getAuth, updateProfile } from 'firebase/auth';
-import { getStorage, ref, getDownloadURL, uploadString } from 'firebase/storage';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
