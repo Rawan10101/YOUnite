@@ -23,6 +23,8 @@ import {
   where,
   orderBy,
   limit,
+  arrayUnion,
+ arrayRemove,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 
@@ -317,27 +319,36 @@ const renderOrganization = ({ item }) => (
 );
 
 
-  const renderPost = ({ item }) => (
-    <Animatable.View animation="fadeInUp" style={styles.postCard}>
-      <View style={styles.postHeader}>
-        {item.organizationAvatar ? (
-          <Image source={{ uri: item.organizationAvatar }} style={styles.postAvatar} />
-        ) : (
-          <View style={[styles.postAvatar, { backgroundColor: "#476397" }]}>
-            <Text style={styles.postAvatarLetter}>{item.organizationName?.charAt(0).toUpperCase()}</Text>
-          </View>
-        )}
-        <Text style={styles.postOrganization}>{item.organizationName}</Text>
-      </View>
-      <Text style={styles.postText}>{item.caption || item.text}</Text>
-      {item.imageUrl && <Image source={{ uri: item.imageUrl }} style={styles.postImage} />}
-      <View style={styles.postActions}>
-        <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
-        <TouchableOpacity><Ionicons name="chatbubble-outline" size={24} color="#444" /></TouchableOpacity>
-        <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity>
-      </View>
-    </Animatable.View>
-  );
+ const renderPost = ({ item }) => (
+  
+  <Animatable.View animation="fadeInUp" style={styles.postCard}>
+    <View style={styles.postHeader}>
+      {item.organizationAvatar ? (
+        <Image source={{ uri: item.organizationAvatar }} style={styles.postAvatar} />
+      ) : (
+        <View style={[styles.postAvatar, { backgroundColor: "#476397" }]}>
+          <Text style={styles.postAvatarLetter}>{item.organizationName?.charAt(0).toUpperCase()}</Text>
+        </View>
+      )}
+      <Text style={styles.postOrganization}>{item.organizationName}</Text>
+    </View>
+    <Text style={styles.postText}>{item.caption || item.text}</Text>
+    {/* Show multiple images if available, else single */}
+    {item.imageUrls && item.imageUrls.length > 0 ? (
+      item.imageUrls.map((uri, index) => (
+        <Image key={index} source={{ uri }} style={styles.postImage} />
+      ))
+    ) : item.imageUrl ? (
+      <Image source={{ uri: item.imageUrl }} style={styles.postImage} />
+    ) : null}
+    <View style={styles.postActions}>
+      <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
+      <TouchableOpacity><Ionicons name="chatbubble-outline" size={24} color="#444" /></TouchableOpacity>
+      <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity>
+    </View>
+  </Animatable.View>
+);
+
 
   return (
     <View style={styles.container}>

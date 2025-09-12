@@ -138,7 +138,8 @@ function VolunteerTabs() {
       })}
     >
       <Tab.Screen name="Feed" component={FeedStackScreen} />
-      
+            <Tab.Screen name="Events" component={EventsStackScreen} />
+
       <Tab.Screen 
         name="ChatList" 
         component={ChatStackNavigator}
@@ -150,7 +151,6 @@ function VolunteerTabs() {
         }}
       />
 
-      <Tab.Screen name="Events" component={EventsStackScreen} />
       
       <Tab.Screen name="Profile" component={ProfileStackScreen} />
     </Tab.Navigator>

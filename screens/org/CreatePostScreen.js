@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useState } from 'react';
 import {
   Alert,
@@ -16,66 +16,92 @@ import {
   View,
 } from 'react-native';
 import { useAppContext } from '../../contexts/AppContext';
-import { db, storage } from '../../firebaseConfig';
+import { db } from '../../firebaseConfig';
+
+const CLOUD_FUNCTION_URL = 'https://us-central1-younite-7eb12.cloudfunctions.net/uploadPostImage'; 
 
 export default function CreatePostScreen({ navigation }) {
   const { user } = useAppContext();
   const [postText, setPostText] = useState('');
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [postType, setPostType] = useState('announcement'); // announcement, update, news
+  const [selectedImages, setSelectedImages] = useState([]); // multiple images
+  const [postType, setPostType] = useState('announcement');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const pickImage = async () => {
+  // Pick multiple images (using updated ImagePicker API)
+ const pickImages = async () => {
+  try {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    console.log('Gallery permission status:', status);
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Please grant camera roll permissions to add images.');
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [16, 9],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, // Use MediaTypeOptions for compatibility
+      allowsMultipleSelection: true,
+      allowsEditing: false,
       quality: 0.8,
     });
-
     if (!result.canceled) {
-      setSelectedImage(result.assets[0].uri);
+      console.log('User picked images:', result.assets);
+      setSelectedImages(result.assets.map(asset => asset.uri));
+    } else {
+      console.log('User cancelled image picker');
     }
-  };
+  } catch (error) {
+    console.error('Error picking images:', error);
+    Alert.alert('Error', 'Failed to pick images.');
+  }
+};
 
-  const uploadImage = async (uri) => {
+  
+
+
+  // Upload image by calling your Cloud Function (like CreateEventScreen)
+  const uploadImageToFirebase = async (imageUri) => {
     try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const imageRef = ref(storage, `posts/${user.uid}_${Date.now()}.jpg`);
-      await uploadBytes(imageRef, blob);
-      return await getDownloadURL(imageRef);
+      const base64 = await FileSystem.readAsStringAsync(imageUri, { encoding: 'base64' });
+      const response = await fetch(CLOUD_FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, userId: user.uid }),
+      });
+      if (!response.ok) throw new Error('Upload failed');
+      const { downloadURL } = await response.json();
+      return downloadURL;
     } catch (error) {
-      console.error('Error uploading image:', error);
+      console.error('Image upload failed:', error);
+      Alert.alert('Error', 'Failed to upload image');
       throw error;
     }
   };
 
+  // Upload all selected images using Cloud Function
+  const uploadImages = async (uris) => {
+    const urls = [];
+    for (const uri of uris) {
+      const url = await uploadImageToFirebase(uri);
+      urls.push(url);
+    }
+    return urls;
+  };
+
   const handleSubmitPost = async () => {
-    if (!postText.trim() && !selectedImage) {
-      Alert.alert('Error', 'Please add some content or an image to your post.');
+    if (!postText.trim() && selectedImages.length === 0) {
+      Alert.alert('Error', 'Please add some content or images.');
       return;
     }
-
     setIsSubmitting(true);
-
     try {
-      let imageUrl = null;
-      if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage);
+      let imageUrls = [];
+      if (selectedImages.length > 0) {
+        imageUrls = await uploadImages(selectedImages);
       }
-
       const postData = {
         text: postText.trim() || null,
-        imageUrl: imageUrl || null,
+        imageUrls,
         authorId: user.uid,
-        authorName: user.displayName || user.email?.split('@')[0] || 'Organization',
+        authorName: user.displayName || user.email?.split('@')[0] || 'User',
         authorAvatar: user.photoURL || null,
         authorType: 'organization',
         type: postType,
@@ -85,15 +111,10 @@ export default function CreatePostScreen({ navigation }) {
         views: [],
         isPublic: true,
       };
-
       await addDoc(collection(db, 'posts'), postData);
-
-      Alert.alert(
-        'Success', 
-        'Your post has been published!',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
-
+      Alert.alert('Success', 'Your post has been published!', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
     } catch (error) {
       console.error('Error submitting post:', error);
       Alert.alert('Error', 'Failed to publish post. Please try again.');
@@ -129,14 +150,14 @@ export default function CreatePostScreen({ navigation }) {
         <TouchableOpacity
           style={[
             styles.publishButton,
-            (!postText.trim() && !selectedImage) ? styles.publishButtonDisabled : null
+            (!postText.trim() && selectedImages.length === 0) ? styles.publishButtonDisabled : null
           ]}
           onPress={handleSubmitPost}
-          disabled={isSubmitting || (!postText.trim() && !selectedImage)}
+          disabled={isSubmitting || (!postText.trim() && selectedImages.length === 0)}
         >
           <Text style={[
             styles.publishButtonText,
-            (!postText.trim() && !selectedImage) ? styles.publishButtonTextDisabled : null
+            (!postText.trim() && selectedImages.length === 0) ? styles.publishButtonTextDisabled : null
           ]}>
             {isSubmitting ? 'Publishing...' : 'Publish'}
           </Text>
@@ -184,33 +205,32 @@ export default function CreatePostScreen({ navigation }) {
           />
         </View>
 
-        {/* Selected Image */}
-        {selectedImage && (
-          <View style={styles.imageContainer}>
-            <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
-            <TouchableOpacity
-              style={styles.removeImageButton}
-              onPress={() => setSelectedImage(null)}
-            >
-              <Ionicons name="close-circle" size={24} color="#E33F3F" />
-            </TouchableOpacity>
-          </View>
+        {/* Selected Images */}
+        {selectedImages.length > 0 && (
+          <ScrollView horizontal style={styles.imagesScroll}>
+            {selectedImages.map((uri, idx) => (
+              <View key={idx} style={styles.imageContainer}>
+                <Image source={{ uri }} style={styles.selectedImage} />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setSelectedImages(selectedImages.filter((_, i) => i !== idx))}
+                >
+                  <Ionicons name="close-circle" size={24} color="#E33F3F" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </ScrollView>
         )}
 
-        {/* Character Count */}
-        <View style={styles.characterCount}>
-          <Text style={styles.characterCountText}>
-            {postText.length}/1000 characters
-          </Text>
-        </View>
       </ScrollView>
 
       {/* Bottom Actions */}
       <View style={styles.bottomActions}>
-        <TouchableOpacity style={styles.actionButton} onPress={pickImage}>
-          <Ionicons name="image-outline" size={24} color="#4e8cff" />
-          <Text style={styles.actionText}>Add Photo</Text>
-        </TouchableOpacity>
+     <TouchableOpacity style={styles.actionButton} onPress={pickImages}>
+  <Ionicons name="image-outline" size={24} color="#4e8cff" />
+  <Text style={styles.actionText}>Add Photos</Text>
+</TouchableOpacity>
+
       </View>
     </KeyboardAvoidingView>
   );
@@ -221,8 +241,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8F9FB',
   },
-
-  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -256,14 +274,10 @@ const styles = StyleSheet.create({
   publishButtonTextDisabled: {
     color: '#9CA3AF',
   },
-
-  // Content
   content: {
     flex: 1,
     padding: 20,
   },
-
-  // Type Section
   typeSection: {
     marginBottom: 24,
   },
@@ -292,8 +306,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-
-  // Text Section
   textSection: {
     marginBottom: 20,
   },
@@ -307,37 +319,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-
-  // Image
-  imageContainer: {
-    position: 'relative',
+  imagesScroll: {
     marginBottom: 20,
   },
+  imageContainer: {
+    position: 'relative',
+    marginRight: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
   selectedImage: {
-    width: '100%',
-    height: 240,
+    width: 160,
+    height: 120,
     borderRadius: 16,
   },
   removeImageButton: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 6,
+    right: 6,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 12,
-    padding: 4,
+    padding: 2,
   },
-
-  // Character Count
-  characterCount: {
-    alignItems: 'flex-end',
-    marginBottom: 20,
-  },
-  characterCountText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-
-  // Bottom Actions
   bottomActions: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
