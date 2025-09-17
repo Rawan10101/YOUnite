@@ -26,8 +26,8 @@ import {
   View
 } from "react-native";
 import * as Animatable from "react-native-animatable";
-import { useAppContext } from "../../../contexts/AppContext";
-import { db } from "../../../firebaseConfig";
+import { useAppContext } from "../../contexts/AppContext";
+import { db } from "../../firebaseConfig";
 
 const EMERALD = "#476397ff";
 
@@ -323,9 +323,8 @@ export default function OrganizationDetailsScreen({ route, navigation }) {
                   style={styles.eventCard}
                 >
                   <TouchableOpacity
-                    onPress={() =>
-                      navigation.navigate("EventDetails", { eventId: item.id })
-                    }
+                       onPress={() => navigation.navigate("EventDetails", { event: item })}
+
                   >
                     <Image
                       source={{

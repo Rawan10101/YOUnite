@@ -18,9 +18,8 @@ import ChatMainScreen from './screens/MainTabs/ChatScreen/ChatMainScreen';
 import DiscoverScreen from './screens/MainTabs/DiscoverScreen/DiscoverScreen';
 import EventDetailsScreen from './screens/MainTabs/EventsScreen/EventDetailsScreen';
 import EventsScreen from './screens/MainTabs/EventsScreen/EventsScreen';
-import OrganizationDetailsScreen from './screens/MainTabs/EventsScreen/OrganizationDetailsScreen';
+import OrganizationDetailsScreen from './screens/org/OrganizationDetailsScreen';
 import ChatScreen from './screens/MainTabs/FeedScreen/ChatScreen';
-import CommentsScreen from './screens/MainTabs/FeedScreen/CommentsScreen';
 import CreateReportScreen from './screens/MainTabs/FeedScreen/CreateReportScreen';
 import FeedScreen from './screens/MainTabs/FeedScreen/FeedScreen';
 import EditProfileScreen from './screens/MainTabs/ProfileScreen/EditProfileScreen';
@@ -36,6 +35,8 @@ import EditEventScreen from './screens/org/EditEventScreen';
 import OrganizationDashboard from './screens/org/OrgDashboard';
 import OrganizationEvents from './screens/org/OrgEvents';
 import VoluntOrgScreen from './screens/org/VoluntOrgScreen';
+import RespondReportScreen from './screens/org/RespondReportScreen';
+import CommentsScreen from './screens/MainTabs/FeedScreen/CommentsScreen';
 
 // NEW: Import Event Participants Screen
 import EventParticipantsScreen from './screens/org/EventParticipantsScreen';
@@ -93,7 +94,7 @@ function FeedStackScreen() {
         options={{ headerShown: false }}
       />
       <Stack.Screen 
-        name="Comments" 
+        name="CommentsScreen" 
         component={CommentsScreen} 
         options={{ headerShown: false }} 
       />
@@ -309,6 +310,11 @@ function OrganizationDashboardStack() {
         component={EditEventScreen}
         options={{ headerShown: false }}
       />
+     <Stack.Screen 
+        name="CommentsScreen" 
+        component={CommentsScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="PostDetails"
         component={CreatePostScreen}
@@ -324,6 +330,17 @@ function OrganizationDashboardStack() {
         component={ReportsScreen} 
         options={{ headerShown: false }}
       />
+          <Stack.Screen 
+        name="RespondReportScreen" 
+        component={RespondReportScreen}
+        options={{ headerShown: false }}
+      />
+          <Stack.Screen 
+        name="OrganizationDetails" 
+        component={OrganizationDetailsScreen}
+        options={{ headerShown: false }}
+      />
+      
     </Stack.Navigator>
   );
 }

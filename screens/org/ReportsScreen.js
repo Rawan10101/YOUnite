@@ -144,24 +144,24 @@ const renderHeader = () => (
 
       {/* Engagement Footer */}
       <View style={styles.engagementFooter}>
-        <TouchableOpacity style={styles.engagementButton}>
+        {/* <TouchableOpacity style={styles.engagementButton}>
           <Ionicons name="heart-outline" size={18} color="#666" />
           <Text style={styles.engagementText}>{item.likes?.length || 0}</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        <TouchableOpacity style={styles.engagementButton}>
+        {/* <TouchableOpacity style={styles.engagementButton}>
           <Ionicons name="chatbubble-outline" size={18} color="#666" />
           <Text style={styles.engagementText}>{item.comments?.length || 0}</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        <TouchableOpacity style={styles.engagementButton}>
+        {/* <TouchableOpacity style={styles.engagementButton}>
           <Ionicons name="eye-outline" size={18} color="#666" />
           <Text style={styles.engagementText}>{item.views?.length || 0}</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         <TouchableOpacity
           style={styles.respondButton}
-          onPress={() => navigation.navigate("RespondToReport", { report: item })}
+          onPress={() => navigation.navigate("RespondReportScreen", { report: item })}
         >
           <Ionicons name="mail-outline" size={16} color="#2B2B2B" />
           <Text style={styles.respondText}>Respond</Text>

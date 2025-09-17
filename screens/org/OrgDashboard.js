@@ -1,31 +1,29 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  Image,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  RefreshControl,
-  StyleSheet,
-  Platform,
-  Dimensions,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as Animatable from "react-native-animatable";
 import {
   collection,
   doc,
   getDoc,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
   limit,
-  arrayUnion,
- arrayRemove,
+  onSnapshot,
+  orderBy,
+  query,
+  where
 } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import {
+  Dimensions,
+  FlatList,
+  Image,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import * as Animatable from "react-native-animatable";
 import { db } from "../../firebaseConfig";
 
 const screenWidth = Dimensions.get("window").width;
@@ -343,8 +341,20 @@ const renderOrganization = ({ item }) => (
     ) : null}
     <View style={styles.postActions}>
       <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
-      <TouchableOpacity><Ionicons name="chatbubble-outline" size={24} color="#444" /></TouchableOpacity>
-      <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity>
+
+<TouchableOpacity
+  onPress={() => {
+    if (item.id) {
+      navigation.navigate("CommentsScreen", { reportId: item.id });
+    } else {
+      console.warn("Item id is undefined");
+    }
+  }}
+>
+  <Ionicons name="chatbubble-outline" size={24} color="#444" />
+</TouchableOpacity>
+
+          {/* <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity> */}
     </View>
   </Animatable.View>
 );

@@ -7,7 +7,7 @@ import {
   onSnapshot,
   orderBy,
   query,
-  where,
+  where
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
@@ -29,6 +29,28 @@ import { db } from "../../../firebaseConfig";
 const screenWidth = Dimensions.get("window").width;
 const CARD_GAP = 9;
 const CARD_WIDTH = (screenWidth - 3 * CARD_GAP) / 2;
+
+import educationImg from '../../../assets/images/educationCat.jpeg';
+import environmentImg from '../../../assets/images/environmentCat.jpeg';
+import healthcareImg from '../../../assets/images/healthcareCat.jpeg';
+// import communityImg from '../../assets/images/communityCat.jpeg';
+const localCategoryImages = {
+  environment: environmentImg,
+  education: educationImg,
+  healthcare: healthcareImg,
+};
+
+const getImageSource = (event) => {
+  if (event.hasCustomImage && event.imageUrl) {
+    return { uri: event.imageUrl };
+  }
+
+  if (event?.category && localCategoryImages[event.category]) {
+    return localCategoryImages[event.category];
+  }
+
+  return localCategoryImages.environment;
+}; 
 
 export default function Feed({ navigation }) {
   const [popularEvents, setPopularEvents] = useState([]);
@@ -223,13 +245,20 @@ const renderEvent = ({ item, index }) => (
   >
     <TouchableOpacity
       style={{ flex: 1 }}
-      onPress={() => navigation.navigate("EventDetails", { event: item })}
-      activeOpacity={0.92}
+     onPress={() => navigation.navigate("EventDetails", { event: item })}
+      activeOpacity={0.9}
     >
-      <Image
-        source={{ uri: item.coverImage || 'https://via.placeholder.com/400x180.png?text=Event' }}
-        style={styles.eventImage}
-      />
+      {/* Sharp rectangular event image */}
+<Image
+  source={getImageSource(item)}
+  style={styles.eventImage}
+  onError={({ nativeEvent: { error } }) => {
+    console.log(`❌ Image error for: ${item.title}`);
+    console.log('Image URL:', item.imageUrl);
+    console.log('Error details:', error);
+  }}
+/>
+      {/* Divider */}
       <View style={styles.cardDivider} />
       <View style={styles.eventContent}>
         <Text style={styles.eventTitle} numberOfLines={1}>
@@ -262,7 +291,7 @@ const renderOrganization = ({ item }) => (
       {item.logo ? (
         <Image source={{ uri: item.logo }} style={styles.organizationAvatar} />
       ) : (
-        <View style={[styles.organizationAvatar, { backgroundColor: "#476397" }]}>
+        <View style={[styles.organizationAvatar, { backgroundColor: "#28b35dff" }]}>
           <Text style={styles.organizationAvatarLetter}>
             {(item.name?.charAt(0) ?? "?").toUpperCase()}
           </Text>
@@ -288,27 +317,49 @@ const renderOrganization = ({ item }) => (
 );
 
 
-  const renderPost = ({ item }) => (
-    <Animatable.View animation="fadeInUp" style={styles.postCard}>
-      <View style={styles.postHeader}>
-        {item.organizationAvatar ? (
-          <Image source={{ uri: item.organizationAvatar }} style={styles.postAvatar} />
-        ) : (
-          <View style={[styles.postAvatar, { backgroundColor: "#476397" }]}>
-            <Text style={styles.postAvatarLetter}>{item.organizationName?.charAt(0).toUpperCase()}</Text>
-          </View>
-        )}
-        <Text style={styles.postOrganization}>{item.organizationName}</Text>
-      </View>
-      <Text style={styles.postText}>{item.caption || item.text}</Text>
-      {item.imageUrl && <Image source={{ uri: item.imageUrl }} style={styles.postImage} />}
-      <View style={styles.postActions}>
-        <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
-        <TouchableOpacity><Ionicons name="chatbubble-outline" size={24} color="#444" /></TouchableOpacity>
-        <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity>
-      </View>
-    </Animatable.View>
-  );
+ const renderPost = ({ item }) => (
+  
+  <Animatable.View animation="fadeInUp" style={styles.postCard}>
+    <View style={styles.postHeader}>
+      {item.organizationAvatar ? (
+        <Image source={{ uri: item.organizationAvatar }} style={styles.postAvatar} />
+      ) : (
+        <View style={[styles.postAvatar, { backgroundColor: "#476397" }]}>
+          <Text style={styles.postAvatarLetter}>{item.organizationName?.charAt(0).toUpperCase()}</Text>
+        </View>
+      )}
+      <Text style={styles.postOrganization}>{item.organizationName}</Text>
+    </View>
+    <Text style={styles.postText}>{item.caption || item.text}</Text>
+    {/* Show multiple images if available, else single */}
+    {item.imageUrls && item.imageUrls.length > 0 ? (
+      item.imageUrls.map((uri, index) => (
+        <Image key={index} source={{ uri }} style={styles.postImage} />
+      ))
+    ) : item.imageUrl ? (
+      <Image source={{ uri: item.imageUrl }} style={styles.postImage} />
+    ) : null}
+    <View style={styles.postActions}>
+      <TouchableOpacity><Ionicons name="heart-outline" size={24} color="#444" /></TouchableOpacity>
+
+{/* <TouchableOpacity
+  onPress={() => {
+    if (item.id) {
+      navigation.navigate("CommentsScreen", { reportId: item.id });
+    } else {
+      console.warn("Item id is undefined");
+    }
+  }}
+>
+  <Ionicons name="chatbubble-outline" size={24} color="#444" />
+</TouchableOpacity> */}
+
+          {/* <TouchableOpacity><Ionicons name="share-social-outline" size={24} color="#444" /></TouchableOpacity> */}
+    </View>
+  </Animatable.View>
+);
+
+
 
   return (
     <View style={styles.container}>
@@ -318,7 +369,7 @@ const renderOrganization = ({ item }) => (
       <Text style={styles.appName}>YOUnite</Text>
       <View style={styles.topActions}>
         <TouchableOpacity onPress={() => setSearchActive(true)} style={styles.iconButton}>
-          <Ionicons name="search" size={28} color="#2B2B2B" />
+          <Ionicons name="search" size={28} color="#0f0f0fff" />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => navigation.navigate("CreateReport")} style={styles.iconButton}>
           <Ionicons name="flag-outline" size={28} color="rgba(5,5,5,0.73)" />
@@ -399,6 +450,7 @@ const renderOrganization = ({ item }) => (
   );
 }
 
+
 const styles = StyleSheet.create({
   topBar: {
     paddingTop: Platform.OS === "ios" ? 60 : 40,
@@ -441,6 +493,64 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     marginRight: 16,
   },
+  eventCard: {
+  width: CARD_WIDTH + 10,
+  backgroundColor: "#fff",
+  borderColor: "#e6e6e6",
+  borderRadius: 10,      // Smooth corners but not circles
+  borderWidth: 1.5,
+  marginBottom: 0,
+  minHeight: 220,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.07,
+  shadowRadius: 0.5,
+  elevation: 2,
+  overflow: "hidden", // Ensure contents don't spill over
+},
+eventImage: {
+  width: "100%",
+  height: 120,
+  borderTopLeftRadius: 10,
+  borderTopRightRadius: 10,
+    backgroundColor: "#ddd",
+},
+cardDivider: {
+  height: 1,
+  backgroundColor: "#e6e6e6",
+  marginHorizontal: 0,
+},
+eventContent: {
+  padding: 12,
+},
+eventTitle: {
+  fontSize: 17,
+  fontWeight: "bold",
+  color: "#222",
+  marginBottom: 4,
+},
+eventOrg: {
+  fontSize: 14,
+  color: "#384c72ff",
+  marginBottom: 2,
+},
+eventLocation: {
+  fontSize: 13,
+  color: "#444",
+  marginBottom: 2,
+},
+eventMeta: {
+  fontSize: 12,
+  color: "#666",
+  marginBottom: 2,
+},
+eventDate: {
+  fontSize: 13,
+  fontWeight: "600",
+  color: "#3867d6",
+  marginTop: 5,
+},
+
   organizationAvatarLetter: {
     fontSize: 29,
     fontWeight: "700",
@@ -465,64 +575,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#888",
   },
-  eventCard: {
-  width: CARD_WIDTH + 10,
-  backgroundColor: "#fff",
-  borderColor: "#ededed",
-  borderWidth: 1.2,
-  borderRadius: 10,      // Smooth corners but not circles
-  marginBottom: 0,
-  minHeight: 220,
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.10,
-  shadowRadius: 4,
-  elevation: 4,
-  overflow: "hidden",
-},
-eventImage: {
-  width: "100%",
-  height: 120,
-  borderTopLeftRadius: 10,
-  borderTopRightRadius: 10,
-  backgroundColor: "#f3f3f3",
-},
-cardDivider: {
-  height: 1,
-  backgroundColor: "#ededed",
-  marginHorizontal: 0,
-},
-eventContent: {
-  padding: 13,
-},
-eventTitle: {
-  fontSize: 18,
-  fontWeight: "bold",
-  color: "#222",
-  marginBottom: 4,
-},
-eventOrg: {
-  fontSize: 14,
-  color: "#384c72ff",
-  marginBottom: 2,
-},
-eventLocation: {
-  fontSize: 13,
-  color: "#444",
-  marginBottom: 2,
-},
-eventMeta: {
-  fontSize: 12,
-  color: "#666",
-  marginBottom: 2,
-},
-eventDate: {
-  fontSize: 13,
-  fontWeight: "600",
-  color: "#3867d6",
-  marginTop: 6,
-},
-
   followButton: {
     backgroundColor: "#157efb",
     paddingHorizontal: 18,
@@ -609,7 +661,7 @@ eventDate: {
     fontSize: 22,
     fontWeight: "700",
     marginLeft: 8,
-    marginBottom: 5,
+    marginBottom: 10,
     color: "#222",
   },
   horizontalCard: {
@@ -640,7 +692,7 @@ eventDate: {
     color: "#fff",
   },
   eventTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "bold",
     color: "#222",
   },
