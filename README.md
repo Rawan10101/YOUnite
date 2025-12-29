@@ -1,4 +1,4 @@
-# Younite
+# YOUnite
 
 Younite is a modern React Native social volunteering platform that empowers volunteers and organizations to connect, collaborate, and make a measurable impact in their communities. Built with Expo and Firebase, Younite delivers seamless event participation, instant profile management, real-time activity tracking, and reliable image uploads using serverless cloud functions.
 
