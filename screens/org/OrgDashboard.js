@@ -253,7 +253,7 @@ const renderEvent = ({ item, index }) => (
   source={getImageSource(item)}
   style={styles.eventImage}
   onError={({ nativeEvent: { error } }) => {
-    console.log(`❌ Image error for: ${item.title}`);
+    console.log(`Image error for: ${item.title}`);
     console.log('Image URL:', item.imageUrl);
     console.log('Error details:', error);
   }}

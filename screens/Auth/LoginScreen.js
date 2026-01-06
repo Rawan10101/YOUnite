@@ -1,6 +1,6 @@
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useState } from 'react';
-import { ActivityIndicator, Animated, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, Platform } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import { auth } from '../../firebaseConfig';
 import { useAppContext } from '../../contexts/AppContext'; // Add this import
@@ -44,7 +44,9 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Login</Text>
+      <Text style={styles.title}>YOUnite</Text>
+
+
 
       {error ? (
         <Animated.View style={{ transform: [{ translateX: shakeAnimation }] }}>
@@ -74,7 +76,7 @@ export default function LoginScreen({ navigation }) {
       </Animatable.View>
 
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log in</Text>}
       </TouchableOpacity>
 
       <Text
@@ -89,11 +91,11 @@ export default function LoginScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, justifyContent: 'center' },
-  title: { fontSize: 32, fontWeight: 'bold', marginBottom: 20, alignSelf: 'center' },
+  title: { fontSize: 32, fontWeight: 'bold', marginBottom: 25, alignSelf: 'center', fontFamily: Platform.OS==='ios'?'Raleway':'cursive' },
   input: { height: 50, borderColor: '#ccc', borderWidth: 1, borderRadius: 8, marginBottom: 15, paddingHorizontal: 15 },
   error: { color: 'red', marginBottom: 15, textAlign: 'center' },
   button: {
-    backgroundColor: '#4e8cff',
+    backgroundColor: '#1e1818ff',
     height: 50,
     borderRadius: 8,
     justifyContent: 'center',
@@ -105,5 +107,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  link: { color: '#4e8cff', marginTop: 20, textAlign: 'center' },
+  link: { color: '#1e1818ff', marginTop: 20, textAlign: 'center' },
+
 });
