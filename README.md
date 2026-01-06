@@ -30,8 +30,8 @@ Younite is a modern React Native social volunteering platform that empowers volu
 
 1. Clone the repository:
    ```
-   git clone https://github.com/your-username/younite.git
-   cd younited
+   git clone https://github.com/Rawan10101/YOUnite
+   cd YOUnite
    ```
 
 2. Install dependencies:
@@ -45,7 +45,7 @@ Younite is a modern React Native social volunteering platform that empowers volu
 
 3. Start Expo:
    ```
-   expo start
+   npx expo start
    ```
 
 ***
@@ -53,12 +53,6 @@ Younite is a modern React Native social volunteering platform that empowers volu
 ## Contributing
 
 Contributions are welcome. Please open pull requests for enhancements or bug fixes. All contributors are encouraged to follow project conventions and document major changes.
-
-***
-
-## Support
-
-If you encounter issues or have feature requests, use the [GitHub Issues](https://github.com/your-username/younite/issues) tab.
 
 ***
 
