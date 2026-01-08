@@ -104,7 +104,7 @@ function FeedStackScreen() {
   );
 }
 
-// VOLUNTEER TAB NAVIGATOR (your existing MainTabs)
+// VOLUNTEER TAB NAVIGATOR 
 function VolunteerTabs() {
   return (
     <Tab.Navigator
@@ -201,7 +201,7 @@ function OrganizationTabs() {
   );
 }
 
-// NEW: Applications Stack for Volunteers
+//  Applications Stack for Volunteers
 function ApplicationsStackScreen() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -359,13 +359,13 @@ function OrganizationEventsStack() {
         component={CreateEventScreen}
         options={{ headerShown: false, title: 'Create Event' }}
       />
-      {/* NEW: Add EditEventScreen to Events Stack */}
+      {/* Add EditEventScreen to Events Stack */}
       <Stack.Screen 
         name="EditEvent" 
         component={EditEventScreen}
         options={{ headerShown: false, title: 'Edit Event' }}
       />
-      {/* NEW: Event Participants Screen */}
+      {/* Event Participants Screen */}
       <Stack.Screen 
         name="EventParticipants" 
         component={EventParticipantsScreen}
