@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { getAuth, updateProfile } from 'firebase/auth';
 import {
   collection,
@@ -19,6 +18,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -27,10 +28,9 @@ import {
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import { useAppContext } from '../../../contexts/AppContext';
-import { db, storage } from '../../../firebaseConfig';
+import { db } from '../../../firebaseConfig';
 
-// ProfileAvatar component
-// ProfileAvatar component with cache busting on photoURL
+// --- Profile Avatar Component ---
 const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
   const getInitials = (name) => {
     if (!name) return 'V';
@@ -43,16 +43,7 @@ const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
   };
 
   const getAvatarColor = (name) => {
-    const colors = [
-      '#4e8cff',
-      '#FF6B6B',
-      '#4ECDC4',
-      '#45B7D1',
-      '#96CEB4',
-      '#FECA57',
-      '#FF9FF3',
-      '#54A0FF',
-    ];
+    const colors = ['#4e8cff', '#FF6B6B', '#4ECDC4', '#FECA57', '#54A0FF'];
     if (!name) return colors[0];
     return colors[name.length % colors.length];
   };
@@ -60,52 +51,48 @@ const ProfileAvatar = ({ photoURL, displayName, size = 100, onPressAdd }) => {
   const photoUri = photoURL ? `${photoURL}?t=${Date.now()}` : null;
 
   return (
-    <View style={{ width: size, height: size }}>
-      {!photoURL ? (
-        <View
-          style={{
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            backgroundColor: getAvatarColor(displayName),
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          <Text
+    <View style={{ width: size, height: size, alignSelf: 'center', marginBottom: 10 }}>
+      <View style={[styles.avatarContainer, { width: size, height: size, borderRadius: size / 2 }]}>
+        {!photoURL ? (
+          <View
             style={{
-              color: 'white',
-              fontSize: size * 0.4,
-              fontWeight: '600',
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              backgroundColor: getAvatarColor(displayName),
+              justifyContent: 'center',
+              alignItems: 'center',
             }}
           >
-            {getInitials(displayName)}
-          </Text>
-        </View>
-      ) : (
-        <Image
-          source={{ uri: photoUri }}
-          style={{ width: size, height: size, borderRadius: size / 2 }}
-          resizeMode="cover"
-          onError={(e) => console.log('Avatar image load error', e.nativeEvent.error)}
-        />
-      )}
+            <Text style={{ color: 'white', fontSize: size * 0.4, fontWeight: '700' }}>
+              {getInitials(displayName)}
+            </Text>
+          </View>
+        ) : (
+          <Image
+            source={{ uri: photoUri }}
+            style={{ width: size, height: size, borderRadius: size / 2 }}
+            resizeMode="cover"
+          />
+        )}
+      </View>
+
+      {/* Edit Badge */}
       <TouchableOpacity
-        style={{ position: 'absolute', right: size * 0.1, bottom: size * 0.1 }}
+        style={styles.editBadge}
         onPress={onPressAdd}
+        activeOpacity={0.8}
       >
-        <Ionicons name="add-circle" size={size * 0.25} color="#4CAF50" />
+        <Ionicons name="camera" size={14} color="#fff" />
       </TouchableOpacity>
     </View>
   );
 };
 
-
-
-
-
 export default function ProfileScreen({ navigation }) {
   const { user, setUser, followedOrganizations } = useAppContext();
+  
+  // State
   const [userStats, setUserStats] = useState({
     totalHours: 0,
     eventsAttended: 0,
@@ -115,6 +102,7 @@ export default function ProfileScreen({ navigation }) {
   const [recentActivities, setRecentActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (user?.uid) {
@@ -123,6 +111,12 @@ export default function ProfileScreen({ navigation }) {
       return () => unsubscribe && unsubscribe();
     }
   }, [user?.uid, followedOrganizations]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchUserData();
+    setRefreshing(false);
+  };
 
   const fetchUserData = async () => {
     try {
@@ -151,257 +145,208 @@ export default function ProfileScreen({ navigation }) {
       orderBy('createdAt', 'desc'),
       limit(5)
     );
-    const unsubscribe = onSnapshot(userPostsQuery, (querySnapshot) => {
+    return onSnapshot(userPostsQuery, (querySnapshot) => {
       const activities = [];
       querySnapshot.docs.forEach(doc => {
         const postData = doc.data();
         activities.push({
           id: doc.id,
           type: postData.type === 'report' ? 'report_created' : 'post_created',
-          title: postData.type === 'report' ? 'Created a new report' : 'Shared a new post',
+          title: postData.type === 'report' ? 'Submitted a Report' : 'Shared a Post',
           date: postData.createdAt?.toDate ? getTimeAgo(postData.createdAt.toDate()) : 'Recently',
           icon: postData.type === 'report' ? 'flag' : 'chatbox',
-          color: postData.type === 'report' ? '#E33F3F' : '#4e8cff',
+          color: postData.type === 'report' ? '#EF4444' : '#3B82F6',
         });
       });
       setRecentActivities(activities);
-    }, (error) => {
-      console.error('Error fetching activities:', error);
     });
-    return unsubscribe;
   };
 
   const getTimeAgo = (date) => {
     const now = new Date();
-    const diffInMs = now - date;
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    const diffInDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
     if (diffInDays === 0) return 'Today';
-    if (diffInDays === 1) return '1 day ago';
+    if (diffInDays === 1) return 'Yesterday';
     if (diffInDays < 7) return `${diffInDays} days ago`;
-    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
-    return `${Math.floor(diffInDays / 30)} months ago`;
+    return date.toLocaleDateString();
+  };
+
+  // --- Image Upload Logic (Cloud Function) ---
+  const CLOUD_FUNCTION_URL = 'https://us-central1-younite-7eb12.cloudfunctions.net/uploadProfileImage';
+
+  const handleAddProfileImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert("Permission Required", "Please allow access to your photos to upload a profile picture.");
+        return;
+      }
+
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6, // Slightly lower quality for faster upload
+      });
+
+      if (pickerResult.canceled) return;
+
+      const imageUri = pickerResult.assets?.[0]?.uri;
+      if (!imageUri) return;
+
+      setUploading(true);
+
+      const base64String = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+
+      if (!currentUser) throw new Error("User not authenticated");
+
+      const response = await fetch(CLOUD_FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64: base64String, userId: currentUser.uid }),
+      });
+
+      if (!response.ok) throw new Error('Upload failed');
+
+      const { downloadURL } = await response.json();
+
+      // Update Firebase Auth & Firestore
+      await updateProfile(currentUser, { photoURL: downloadURL });
+      await updateDoc(doc(db, 'users', currentUser.uid), { photoURL: downloadURL });
+
+      // Update Local State
+      setUser((prev) => ({ ...prev, photoURL: downloadURL }));
+      
+      Alert.alert("Success", "Profile photo updated!");
+    } catch (error) {
+      console.error("Upload error:", error);
+      Alert.alert("Error", "Could not upload image. Please try again.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: () => setUser(null) },
-      ]
-    );
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: () => setUser(null) },
+    ]);
   };
 
-const CLOUD_FUNCTION_URL = 'https://us-central1-younite-7eb12.cloudfunctions.net/uploadProfileImage';
-
-const handleAddProfileImage = async () => {
-  try {
-    console.log("Requesting media library permissions...");
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert("Permission Denied", "Permission to access media library is required!");
-      console.log("Permission denied.");
-      return;
-    }
-    console.log("Permission granted.");
-    console.log("Launching image picker...");
-    const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-    if (pickerResult.canceled) {
-      console.log("Image picker canceled.");
-      return;
-    }
-    console.log("Image picked.");
-    const imageUri = pickerResult.assets?.[0]?.uri;
-    if (!imageUri) {
-      console.log("No image URI found.");
-      return;
-    }
-    console.log("Image URI:", imageUri);
-    console.log("Reading image as base64...");
-    
-    const base64String = await FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 });
-    console.log("Base64 length:", base64String.length);
-    const auth = getAuth();
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert("Error", "User not authenticated.");
-      console.log("User not authenticated.");
-      return;
-    }
-    console.log("Authenticated user:", user.uid);
-    console.log("Uploading base64 string to Firebase Cloud Function...");
-    const response = await fetch(CLOUD_FUNCTION_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ base64: base64String, userId: user.uid }),
- });
-    if (!response.ok) {
-      throw new Error('Cloud Function upload failed');
-    }
-    const { downloadURL } = await response.json();
-    console.log("Download URL from Cloud Function:", downloadURL);
-    await updateProfile(user, { photoURL: downloadURL });
-    console.log("User profile updated with photoURL.");
-    await updateDoc(doc(db, 'users', user.uid), { photoURL: downloadURL });
-    console.log("Firestore user document updated with photoURL.");
-    // Update local user state to trigger UI refresh (important)
-    setUser((prevUser) => ({
-      ...prevUser,
-      photoURL: downloadURL,
-    }));
-    Alert.alert("Success", "Profile image updated successfully!");
-  } catch (error) {
-    console.error("Upload error:", error);
-    Alert.alert("Error", `Failed to upload profile image. ${error.message || error}`);
-  }
-};
-
-
-
-
-
-
-
-
-  const renderStatCard = (title, value, icon, color) => (
-    <Animatable.View
-      animation="fadeInUp"
-      duration={600}
-      style={[styles.statCard, { borderLeftColor: color }]}
-    >
-      <View style={styles.statContent}>
-        <Ionicons name={icon} size={24} color={color} />
-        <View style={styles.statText}>
-          <Text style={styles.statValue}>{value}</Text>
-          <Text style={styles.statTitle}>{title}</Text>
-        </View>
-      </View>
-    </Animatable.View>
-  );
-
-  const renderActivity = ({ item, index }) => (
-    <Animatable.View
-      animation="fadeInLeft"
-      duration={600}
-      delay={index * 100}
-      style={styles.activityItem}
-    >
-      <View style={[styles.activityIcon, { backgroundColor: item.color }]}>
-        <Ionicons name={item.icon} size={16} color="#fff" />
-      </View>
-      <View style={styles.activityContent}>
-        <Text style={styles.activityTitle}>{item.title}</Text>
-        <Text style={styles.activityDate}>{item.date}</Text>
-      </View>
-    </Animatable.View>
-  );
-
+  // --- Menu Data ---
   const menuItems = [
-    { id: '1', title: 'Edit Profile', icon: 'create-outline', onPress: () => navigation.navigate('EditProfile') },
-    { id: '2', title: 'Profile Details', icon: 'person-circle-outline', onPress: () => navigation.navigate('ProfileDetails') },
+    { id: '1', title: 'Edit Profile', icon: 'person-outline', onPress: () => navigation.navigate('EditProfile') },
     { id: '3', title: 'My Events', icon: 'calendar-outline', onPress: () => navigation.navigate('Events', { screen: 'EventsMain' }) },
     { id: '4', title: 'Followed Organizations', icon: 'heart-outline', onPress: () => navigation.navigate('DiscoverMain') },
-    { id: '5', title: 'My Reports', icon: 'flag-outline', onPress: () => Alert.alert('Reports', 'My Reports page coming soon!') },
     { id: '6', title: 'Settings', icon: 'settings-outline', onPress: () => navigation.navigate('Settings') },
-    { id: '7', title: 'Help & Support', icon: 'help-circle-outline', onPress: () => Alert.alert('Help', 'Help & Support coming soon!') },
   ];
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Animatable.View animation="pulse" iterationCount="infinite">
-          <Ionicons name="person" size={48} color="#4e8cff" />
-        </Animatable.View>
-        <Text style={styles.loadingText}>Loading profile...</Text>
+        <ActivityIndicator size="large" color="#10B981" />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <Animatable.View animation="fadeInDown" duration={800} style={styles.profileSection}>
-          <View style={styles.profileInfo}>
-            <ProfileAvatar
-              photoURL={user?.photoURL}
-              displayName={user?.displayName || user?.email?.split('@')[0]}
-              size={80}
-              onPressAdd={handleAddProfileImage}
-            />
-            {/* <Image
-              source={getImageSource(item)}
-              style={styles.eventImage}
-              onError={({ nativeEvent: { error } }) => {
-                console.log(`❌ Image error for: ${item.title}`);
-                console.log('Image URL:', item.imageUrl);
-                console.log('Error details:', error);
-              }}
-            /> */}
-            <Text style={styles.userName}>
-              {user?.displayName || user?.email?.split('@')[0] || 'Volunteer'}
-            </Text>
-          </View>
-        </Animatable.View>
+    <View style={styles.container}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* Header / Profile Card */}
+        <View style={styles.headerSection}>
+          <ProfileAvatar
+            photoURL={user?.photoURL}
+            displayName={user?.displayName || user?.email}
+            size={90}
+            onPressAdd={handleAddProfileImage}
+          />
+          <Text style={styles.userName}>
+            {user?.displayName || "Volunteer"}
+          </Text>
+          <Text style={styles.userEmail}>{user?.email}</Text>
+        </View>
 
-        <View style={styles.statsSection}>
+        {/* Stats Grid */}
+        <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Your Impact</Text>
           <View style={styles.statsGrid}>
-            {renderStatCard('Hours Volunteered', userStats.totalHours, 'time-outline', '#4CAF50')}
-            {renderStatCard('Events Attended', userStats.eventsAttended, 'calendar-outline', '#2196F3')}
-            {renderStatCard('Organizations', userStats.organizationsFollowed, 'heart-outline', '#FF4757')}
-            {renderStatCard('Registered Events', userStats.eventsRegistered, 'arrow-up-circle-outline', '#FF9800')}
+            <View style={styles.statCard}>
+               <Ionicons name="time-outline" size={22} color="#10B981" />
+               <Text style={styles.statValue}>{userStats.totalHours}</Text>
+               <Text style={styles.statLabel}>Hours</Text>
+            </View>
+            <View style={styles.statCard}>
+               <Ionicons name="calendar-outline" size={22} color="#3B82F6" />
+               <Text style={styles.statValue}>{userStats.eventsAttended}</Text>
+               <Text style={styles.statLabel}>Attended</Text>
+            </View>
+            <View style={styles.statCard}>
+               <Ionicons name="heart-outline" size={22} color="#EF4444" />
+               <Text style={styles.statValue}>{userStats.organizationsFollowed}</Text>
+               <Text style={styles.statLabel}>Following</Text>
+            </View>
           </View>
         </View>
 
+        {/* Recent Activity */}
         {recentActivities.length > 0 && (
-          <View style={styles.activitySection}>
+          <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
-            {recentActivities.map((activity, index) => (
-              <View key={activity.id}>
-                {renderActivity({ item: activity, index })}
-              </View>
-            ))}
+            <View style={styles.card}>
+              {recentActivities.map((item, index) => (
+                <View key={item.id} style={[styles.activityRow, index === recentActivities.length - 1 && styles.lastRow]}>
+                   <View style={[styles.activityIcon, { backgroundColor: item.color + '20' }]}>
+                      <Ionicons name={item.icon} size={16} color={item.color} />
+                   </View>
+                   <View style={styles.activityContent}>
+                      <Text style={styles.activityText}>{item.title}</Text>
+                      <Text style={styles.activityDate}>{item.date}</Text>
+                   </View>
+                </View>
+              ))}
+            </View>
           </View>
         )}
 
-        <View style={styles.menuSection}>
-          {menuItems.map((item, index) => (
-            <Animatable.View
-              key={item.id}
-              animation="fadeInUp"
-              duration={600}
-              delay={index * 50}
-            >
-              <TouchableOpacity style={styles.menuItem} onPress={item.onPress}>
+        {/* Menu */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <View style={styles.card}>
+            {menuItems.map((item, index) => (
+              <TouchableOpacity 
+                key={item.id} 
+                style={[styles.menuRow, index === menuItems.length - 1 && styles.lastRow]}
+                onPress={item.onPress}
+              >
                 <View style={styles.menuLeft}>
-                  <Ionicons name={item.icon} size={20} color="#666" />
+                  <Ionicons name={item.icon} size={20} color="#4B5563" />
                   <Text style={styles.menuText}>{item.title}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
               </TouchableOpacity>
-            </Animatable.View>
-          ))}
+            ))}
+          </View>
         </View>
 
-        <Animatable.View animation="fadeInUp" duration={800} style={styles.logoutSection}>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={20} color="#FF4757" />
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
-        </Animatable.View>
+        {/* Logout */}
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+           <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
 
-        <View style={styles.bottomPadding} />
+        <View style={{ height: 40 }} />
       </ScrollView>
 
+      {/* Uploading Overlay */}
       {uploading && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#4e8cff" />
-          <Text style={{ marginTop: 10, color: '#4e8cff' }}>Uploading...</Text>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#10B981" />
+            <Text style={styles.loadingText}>Updating Photo...</Text>
+          </View>
         </View>
       )}
     </View>
@@ -411,110 +356,118 @@ const handleAddProfileImage = async () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  avatar: {
-    borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  defaultAvatar: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  avatarText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  profileSection: {
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    paddingVertical: 30,
-    marginBottom: 12,
-  },
-  profileInfo: {
-    alignItems: 'center',
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2B2B2B',
-    marginTop: 15,
-    textAlign: 'center',
+    backgroundColor: '#F9FAFB', // Light gray modern background
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#4e8cff',
-  },
-  statsSection: {
+  
+  // Header Section
+  headerSection: {
     backgroundColor: '#fff',
-    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 70 : 50,
+    paddingBottom: 30,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
     marginBottom: 20,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2B2B2B',
-    marginBottom: 15,
+  avatarContainer: {
+    marginBottom: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    backgroundColor: '#fff',
   },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    width: '48%',
-    backgroundColor: '#f8f9fa',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderLeftWidth: 4,
-  },
-  statContent: {
-    flexDirection: 'row',
+  editBadge: {
+    position: 'absolute',
+    bottom: 5,
+    right: 0,
+    backgroundColor: '#10B981',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
-  statText: {
-    marginLeft: 12,
+  userName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 10,
   },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2B2B2B',
-  },
-  statTitle: {
-    fontSize: 12,
-    color: '#2B2B2B',
+  userEmail: {
+    fontSize: 14,
+    color: '#6B7280',
     marginTop: 2,
   },
-  activitySection: {
-    backgroundColor: '#fff',
-    padding: 20,
-    marginBottom: 20,
+
+  // Sections
+  sectionContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 25,
   },
-  activityItem: {
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 10,
+    marginLeft: 4,
+  },
+  
+  // Stats Grid
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+
+  // Generic Card Container (for Lists)
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  
+  // Activity Rows
+  activityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F3F4F6',
   },
   activityIcon: {
     width: 32,
@@ -527,72 +480,75 @@ const styles = StyleSheet.create({
   activityContent: {
     flex: 1,
   },
-  activityTitle: {
+  activityText: {
     fontSize: 14,
-    color: '#2B2B2B',
     fontWeight: '500',
+    color: '#1F2937',
   },
   activityDate: {
     fontSize: 12,
-    color: '#2B2B2B',
+    color: '#9CA3AF',
     marginTop: 2,
   },
-  menuSection: {
-    backgroundColor: '#fff',
-    marginBottom: 20,
-  },
-  menuItem: {
+
+  // Menu Rows
+  menuRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    justifyContent: 'space-between',
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#F3F4F6',
+  },
+  lastRow: {
+    borderBottomWidth: 0,
   },
   menuLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   menuText: {
-    fontSize: 16,
-    color: '#2B2B2B',
+    fontSize: 15,
+    color: '#1F2937',
     marginLeft: 12,
+    fontWeight: '500',
   },
-  logoutSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingVertical: 15,
+
+  // Logout
+  logoutBtn: {
+    marginHorizontal: 20,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 14,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FF4757',
+    alignItems: 'center',
   },
   logoutText: {
-    color: '#FF4757',
-    fontSize: 16,
+    color: '#EF4444',
     fontWeight: '600',
-    marginLeft: 8,
+    fontSize: 15,
   },
-  bottomPadding: {
-    height: 20,
-  },
-  addIconContainer: {
-    position: 'absolute',
-    backgroundColor: '#fff',
-    borderRadius: 50,
-  },
+
+  // Loading Overlay
   loadingOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1000,
+    zIndex: 999,
+  },
+  loadingBox: {
+    backgroundColor: '#fff',
+    padding: 25,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#374151',
+    fontWeight: '500',
   },
 });

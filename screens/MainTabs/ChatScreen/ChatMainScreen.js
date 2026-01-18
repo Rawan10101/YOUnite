@@ -33,42 +33,13 @@ export default function ChatMainScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // New state for search
+  // Search State
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Filtered chat rooms based on search
   const filteredChatRooms = chatRooms.filter((room) =>
     room.chatTitle.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const renderAvatar = (uri, size = 50) => {
-    if (uri) {
-      return (
-        <Image
-          source={{ uri }}
-          style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
-        />
-      );
-    }
-    return (
-      <View
-        style={[
-          styles.avatar,
-          {
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            backgroundColor: "#476397",
-            justifyContent: "center",
-            alignItems: "center",
-          },
-        ]}
-      >
-        <Ionicons name="people" size={size * 0.6} color="#fff" />
-      </View>
-    );
-  };
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -105,7 +76,7 @@ export default function ChatMainScreen() {
               }
             } catch {}
           } else if (isGroup) {
-            // group chat title already set
+            // Title already set
           } else if (data.participants.length === 2) {
             const otherId = data.participants.find((uid) => uid !== user.uid);
             if (otherId) {
@@ -130,6 +101,7 @@ export default function ChatMainScreen() {
           });
         }
 
+        // Sort by newest message
         rooms.sort((a, b) => {
           const timeA = a.lastMessageTime?.seconds || 0;
           const timeB = b.lastMessageTime?.seconds || 0;
@@ -157,9 +129,12 @@ export default function ChatMainScreen() {
     const diff = now - date;
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
-    if (minutes < 1) return "Just now";
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return "Now";
+    if (minutes < 60) return `${minutes}m`;
+    if (hours < 24) return `${hours}h`;
+    if (days < 7) return `${days}d`;
     return date.toLocaleDateString();
   };
 
@@ -168,12 +143,26 @@ export default function ChatMainScreen() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
+  // --- Render Components ---
+
+  const renderAvatar = (uri) => {
+    if (uri) {
+      return <Image source={{ uri }} style={styles.avatar} />;
+    }
+    return (
+      <View style={[styles.avatar, styles.avatarPlaceholder]}>
+        <Ionicons name="person" size={24} color="#9CA3AF" />
+      </View>
+    );
+  };
+
   const renderItem = ({ item }) => {
     const lastMessageTime = formatTimestamp(item.lastMessageTime);
 
     return (
       <TouchableOpacity
-        style={styles.chatItem}
+        style={styles.chatRow}
+        activeOpacity={0.7}
         onPress={() =>
           navigation.navigate("Chat", {
             chatRoomId: item.id,
@@ -183,14 +172,16 @@ export default function ChatMainScreen() {
         }
       >
         <View style={styles.avatarContainer}>{renderAvatar(item.avatar)}</View>
-        <View style={styles.chatContent}>
-          <View style={styles.chatHeader}>
-            <Text numberOfLines={1} style={styles.chatTitle}>
+        
+        <View style={styles.chatInfo}>
+          <View style={styles.rowTop}>
+            <Text numberOfLines={1} style={styles.chatName}>
               {item.chatTitle}
             </Text>
-            <Text style={styles.chatTimestamp}>{lastMessageTime}</Text>
+            <Text style={styles.timeText}>{lastMessageTime}</Text>
           </View>
-          <Text numberOfLines={1} style={styles.chatLastMessage}>
+          
+          <Text numberOfLines={1} style={styles.lastMessageText}>
             {item.lastMessage || "No messages yet"}
           </Text>
         </View>
@@ -200,30 +191,37 @@ export default function ChatMainScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        {!isSearching ? (
-          <>
-            <Text style={styles.headerTitle}>Chats</Text>
-            <TouchableOpacity onPress={() => setIsSearching(true)} style={styles.searchIcon}>
-              <Ionicons name="search" size={24} color="#476397" />
-            </TouchableOpacity>
-          </>
+        {isSearching ? (
+          <View style={styles.searchBarContainer}>
+             <Ionicons name="search" size={20} color="#6B7280" style={{marginRight: 8}} />
+             <TextInput
+               style={styles.searchInput}
+               placeholder="Search..."
+               value={searchQuery}
+               onChangeText={setSearchQuery}
+               autoFocus
+               returnKeyType="search"
+             />
+             <TouchableOpacity onPress={() => { setIsSearching(false); setSearchQuery(''); }}>
+               <Text style={styles.cancelText}>Cancel</Text>
+             </TouchableOpacity>
+          </View>
         ) : (
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search chats..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus
-            onBlur={() => setIsSearching(false)}
-            returnKeyType="done"
-          />
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Messages</Text>
+            <TouchableOpacity onPress={() => setIsSearching(true)} style={styles.iconBtn}>
+              <Ionicons name="search" size={24} color="#111827" />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
+      {/* Content */}
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4caf50" />
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#10B981" />
         </View>
       ) : (
         <FlatList
@@ -234,12 +232,11 @@ export default function ChatMainScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Ionicons name="chatbubbles-outline" size={80} color="#bbb" />
-              <Text style={styles.emptyTitle}>No Chats Yet</Text>
-              <Text style={styles.emptySubText}>Browse events to join chats</Text>
+              <Ionicons name="chatbubbles-outline" size={60} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>No messages yet</Text>
+              <Text style={styles.emptySub}>Chats will appear here once you join events.</Text>
             </View>
           }
-          showsVerticalScrollIndicator={false}
         />
       )}
     </View>
@@ -247,63 +244,134 @@ export default function ChatMainScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: {
+    flex: 1,
+    backgroundColor: "#F9FAFB", // Light gray background
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  
+  // Header
   header: {
     backgroundColor: "#fff",
     paddingTop: Platform.OS === "ios" ? 60 : 40,
-    paddingBottom: 12,
     paddingHorizontal: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomColor: "#fff",
+    paddingBottom: 15,
     borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+    justifyContent: 'center',
   },
-  headerTitle: { fontSize: 28, fontWeight: "bold", color: "#2B2B2B" },
-  searchIcon: { padding: 6 },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#111827",
+  },
+  iconBtn: {
+    padding: 4,
+  },
+  
+  // Search
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 40,
+  },
   searchInput: {
     flex: 1,
-    height: 36,
-    backgroundColor: "#f0f0f0",
-    borderRadius: 18,
-    paddingHorizontal: 16,
     fontSize: 16,
-    color: "#333",
+    color: '#111827',
   },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContent: { paddingVertical: 10 },
-  chatItem: {
+  cancelText: {
+    color: '#10B981',
+    fontWeight: '600',
+    marginLeft: 10,
+    fontSize: 14,
+  },
+
+  // List
+  listContent: {
+    paddingVertical: 0,
+  },
+  
+  // Chat Row
+  chatRow: {
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: 14,
     paddingHorizontal: 20,
-    paddingVertical: 15,
     backgroundColor: "#fff",
-    borderBottomColor: "#f0f0f0",
     borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
-  avatarContainer: { marginRight: 15 },
+  avatarContainer: {
+    marginRight: 15,
+  },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#2567e2ff",
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
-  chatContent: { flex: 1 },
-  chatHeader: {
+  avatarPlaceholder: {
+    backgroundColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  
+  chatInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  rowTop: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 5,
+    marginBottom: 4,
   },
-  chatTitle: { fontSize: 16.5, fontWeight: "600", color: "#0a0a0aff", flex: 1 },
-  chatTimestamp: { fontSize: 12, color: "#0a0a0aff", marginLeft: 8 },
-  chatLastMessage: { fontSize: 15, color: "#0a0a0aff" },
+  chatName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1F2937",
+    flex: 1,
+    marginRight: 10,
+  },
+  timeText: {
+    fontSize: 12,
+    color: "#9CA3AF",
+  },
+  lastMessageText: {
+    fontSize: 14,
+    color: "#6B7280",
+    lineHeight: 20,
+  },
+
+  // Empty State
   emptyState: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    marginTop: 80,
+    paddingHorizontal: 40,
   },
-  emptyTitle: { fontSize: 20, fontWeight: "600", color: "#666", marginTop: 20 },
-  emptySubText: { fontSize: 16, color: "#999", marginTop: 8 },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#374151",
+    marginTop: 15,
+  },
+  emptySub: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    textAlign: 'center',
+    marginTop: 5,
+  },
 });
